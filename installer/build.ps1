@@ -94,7 +94,7 @@ function Get-Node([int]$major, [string]$arch) {
   $root = Join-Path $unzipped "node-$version-win-$arch"
   Copy-Item "$root\node.exe" "$dest\node.exe"
   Copy-Item "$root\LICENSE" "$dest\LICENSE" -ErrorAction SilentlyContinue
-  Write-Host "win-$arch: Node.js $version"
+  Write-Host "win-${arch}: Node.js $version"
 }
 
 Step "Adding Node.js (x64, ARM64 and 32-bit)"
