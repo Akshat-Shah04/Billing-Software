@@ -100,6 +100,7 @@ var
   PortPage: TInputQueryWizardPage;
   ClientDirPage: TInputDirWizardPage;
   AdminPage: TInputQueryWizardPage;
+  PasswordPage: TInputQueryWizardPage;
   ExistingData: Boolean;
 
 // ---- Which Node.js to install ----
@@ -247,24 +248,29 @@ begin
     if Trim(String(SavedDir)) <> '' then
       ClientDirPage.Values[0] := Trim(String(SavedDir));
 
+  // Two short pages instead of one long one, so every box is visible at any screen size and display scaling.
   AdminPage := CreateInputQueryPage(ClientDirPage.ID,
     'Administrator account',
     'Create the first administrator login',
     'The administrator can create accounts for the rest of the staff and change the organisation settings.' + #13#10 + #13#10 +
-    'Username: 3 to 30 characters, lowercase letters, numbers, dot, dash or underscore.' + #13#10 +
-    'Password: at least 8 characters, keyboard characters only. Write it down and keep it safe, ' +
-    'because there is no "forgot password" option for the administrator.');
+    'Username: 3 to 30 characters: lowercase letters, numbers, dot, dash or underscore.');
   AdminPage.Add('Full name:', False);
   AdminPage.Add('Username:', False);
-  AdminPage.Add('Password:', True);
-  AdminPage.Add('Confirm password:', True);
   AdminPage.Values[1] := 'admin';
+
+  PasswordPage := CreateInputQueryPage(AdminPage.ID,
+    'Administrator password',
+    'Choose the administrator''s password',
+    'At least 8 characters, using normal keyboard characters. Write it down and keep it safe: ' +
+    'there is no "forgot password" option for the administrator.');
+  PasswordPage.Add('Password:', True);
+  PasswordPage.Add('Confirm password:', True);
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   // On an upgrade the administrator already exists in the kept database.
-  Result := (PageID = AdminPage.ID) and ExistingData;
+  Result := ((PageID = AdminPage.ID) or (PageID = PasswordPage.ID)) and ExistingData;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -309,7 +315,6 @@ begin
   if CurPageID = AdminPage.ID then
   begin
     User := Trim(AdminPage.Values[1]);
-    Pass := AdminPage.Values[2];
 
     if Trim(AdminPage.Values[0]) = '' then
     begin
@@ -336,6 +341,11 @@ begin
         Result := False;
         Exit;
       end;
+  end;
+
+  if CurPageID = PasswordPage.ID then
+  begin
+    Pass := PasswordPage.Values[0];
     if Length(Pass) < 8 then
     begin
       MsgBox('The password must be at least 8 characters long.', mbError, MB_OK);
@@ -349,7 +359,7 @@ begin
         Result := False;
         Exit;
       end;
-    if Pass <> AdminPage.Values[3] then
+    if Pass <> PasswordPage.Values[1] then
     begin
       MsgBox('The two passwords do not match. Please type them again.', mbError, MB_OK);
       Result := False;
@@ -474,7 +484,7 @@ begin
   App := ExpandConstant('{app}');
   PwFile := ExpandConstant('{tmp}\admin-password.txt');
   // The password goes through a temporary file, never on a command line.
-  SaveStringToFile(PwFile, AdminPage.Values[2], False);
+  SaveStringToFile(PwFile, PasswordPage.Values[0], False);
   Code := RunHidden(App + '\node\node.exe',
     'dist\scripts\seed.js --username "' + Lowercase(Trim(AdminPage.Values[1])) +
     '" --full-name "' + Trim(AdminPage.Values[0]) +

@@ -10,10 +10,12 @@ export const itemSchema = z.object({
   details: optionalText(500),
   quantity: z.number().int().min(1).max(100_000),
   unit_price_paise: z.number().int().min(0).max(100_000_000_000),
+  /** The financial year this line is for (2024 = FY 2024-25), printed on the bill. Left out: the bill's own year. */
+  fy_start: z.number().int().min(1990, "Financial year must be 1990-91 or later").max(2200).nullish(),
 });
 
-/** One line of a credit note (no service: it corrects amounts already billed). */
-export const creditLineSchema = itemSchema.omit({ service_id: true });
+/** One line of a credit note (no service or year: it corrects amounts already billed). */
+export const creditLineSchema = itemSchema.omit({ service_id: true, fy_start: true });
 
 export type ItemInput = z.infer<typeof itemSchema>;
 
@@ -40,12 +42,13 @@ export async function assertServicesExist(q: Queryable, items: ItemInput[]) {
   if (rows.length !== ids.length) throw new HttpError(400, "items: one of the services does not exist");
 }
 
-export async function insertItems(q: Queryable, billId: number, items: ItemInput[]) {
+/** Saves a bill's lines. A line without its own financial year gets the bill's (`billFy`). */
+export async function insertItems(q: Queryable, billId: number, items: ItemInput[], billFy: number) {
   for (const i of items) {
     await q.query(
-      `INSERT INTO bill_items (bill_id, service_id, description, details, quantity, unit_price_paise, line_total_paise)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [billId, i.service_id ?? null, i.description, i.details, i.quantity, i.unit_price_paise, i.quantity * i.unit_price_paise],
+      `INSERT INTO bill_items (bill_id, service_id, description, details, quantity, unit_price_paise, line_total_paise, fy_start)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [billId, i.service_id ?? null, i.description, i.details, i.quantity, i.unit_price_paise, i.quantity * i.unit_price_paise, i.fy_start ?? billFy],
     );
   }
 }

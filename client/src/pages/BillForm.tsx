@@ -13,7 +13,9 @@ interface Row {
   service_id: number | null;
   description: string;
   details: string; // the service's description, copied onto the line (editable for this bill only)
-  quantity: string;
+  quantity: string; // not shown any more (always 1 on new lines); kept so older bills with a quantity save unchanged
+  /** The line's financial year; null = the same as the bill's. */
+  fy: number | null;
   price: string; // rupees, as typed
 }
 
@@ -27,7 +29,7 @@ function addDays(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
-const blankRow = (): Row => ({ key: nextKey++, service_id: null, description: "", details: "", quantity: "1", price: "" });
+const blankRow = (): Row => ({ key: nextKey++, service_id: null, description: "", details: "", quantity: "1", price: "", fy: null });
 
 export default function BillForm() {
   const { id } = useParams();
@@ -88,6 +90,7 @@ export default function BillForm() {
               details: i.details ?? "",
               quantity: String(i.quantity),
               price: paiseToInput(i.unit_price_paise),
+              fy: i.fy_start === bill.fy_start ? null : i.fy_start,
             })),
           );
         } else {
@@ -166,6 +169,7 @@ export default function BillForm() {
         details: r.details,
         quantity: parsed[i].quantity,
         unit_price_paise: parsed[i].unit_price_paise,
+        fy_start: r.fy ?? fyStart,
       })),
     };
     setSaving(true);
@@ -296,7 +300,7 @@ export default function BillForm() {
               <tr>
                 <th style={{ minWidth: 150 }}>Service</th>
                 <th style={{ minWidth: 200 }}>Item name</th>
-                <th style={{ width: 80 }}>Qty</th>
+                <th style={{ width: 130 }}>Financial year</th>
                 <th style={{ width: 130 }}>Price (₹)</th>
                 <th className="num">Amount</th>
                 <th />
@@ -324,11 +328,20 @@ export default function BillForm() {
                     <td data-label="Item name">
                       <input aria-label={`Item name for item ${i + 1}`} disabled={locked} placeholder="e.g. GST Return Filing" maxLength={300} value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />
                     </td>
-                    <td data-label="Qty">
-                      <input aria-label={`Quantity for item ${i + 1}`} disabled={locked} inputMode="numeric" maxLength={6} value={r.quantity} onChange={(e) => updateRow(r.key, { quantity: e.target.value })} />
+                    <td data-label="Financial year">
+                      <select aria-label={`Financial year for item ${i + 1}`} disabled={locked} value={r.fy ?? fyStart} onChange={(e) => updateRow(r.key, { fy: Number(e.target.value) === fyStart ? null : Number(e.target.value) })}>
+                        {[...new Set([...fyOptions, r.fy ?? fyStart])]
+                          .sort((a, b) => b - a)
+                          .map((y) => (
+                            <option key={y} value={y}>
+                              {fyLabel(y)}
+                            </option>
+                          ))}
+                      </select>
                     </td>
                     <td data-label="Price (₹)">
                       <input aria-label={`Price for item ${i + 1}`} disabled={locked} inputMode="decimal" maxLength={15} value={r.price} onChange={(e) => updateRow(r.key, { price: e.target.value })} />
+                      {r.quantity.trim() !== "1" && <div className="hint">× {r.quantity} (from the original bill)</div>}
                     </td>
                     <td className="num nowrap" data-label="Amount">
                       {parsed[i].valid ? formatRupees(parsed[i].quantity * (parsed[i].unit_price_paise ?? 0)) : "–"}

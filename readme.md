@@ -33,6 +33,8 @@ A billing software for an accountancy firm to manage clients, services and bills
 - **Financial year chosen separately from the bill date**: the New bill form starts with a financial year dropdown
   (2026-2027, 2025-2026, ... back to 2000-2001), so a bill made today can be for an earlier year's work, and old bills can
   be entered. The bill is numbered in, listed under and exported with that year; the bill date is just the date printed on it.
+- **Financial year per item**: each line of a bill has its own financial year, shown in an FY column on the bill (in place of
+  a quantity), so one bill can cover e.g. *Income Tax Return 2023-24* and *2024-25*.
 - **Payments**: record full or part payments (UPI, bank transfer, cash, cheque, card) with a reference. A wrong payment is
   *voided* (kept, crossed out, with who and why), never deleted.
 - **Due dates and status**: each bill gets a due date from your payment terms. Bills show *Unpaid*, *Part paid*, *Overdue*,

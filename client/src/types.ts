@@ -84,6 +84,8 @@ export interface BillSummary extends Settlement {
   client_phone: string | null;
   client_city: string | null;
   client_deleted: boolean;
+  /** The bill's lines, in order, for the Items column. */
+  items: { description: string; fy_start: number }[];
 }
 
 export interface FinancialYear {
@@ -99,6 +101,8 @@ export interface BillItem {
   quantity: number;
   unit_price_paise: number;
   line_total_paise: number;
+  /** The financial year this line is for (2024 = FY 2024-25), shown on the bill. */
+  fy_start: number;
 }
 
 export type PaymentMethod = "cash" | "upi" | "bank_transfer" | "cheque" | "card" | "other";

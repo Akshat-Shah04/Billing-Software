@@ -20,6 +20,24 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+/** A bill's items as a short bullet list: name and financial year. Long bills show the first few and "+N more". */
+const SHOW_ITEMS = 4;
+function ItemBullets({ items }: { items: { description: string; fy_start: number }[] }) {
+  if (!items.length) return <span className="muted">–</span>;
+  const shown = items.slice(0, SHOW_ITEMS);
+  return (
+    <ul className="item-bullets">
+      {shown.map((i, n) => (
+        <li key={n}>
+          {i.description}
+          <span className="muted"> · {fyLabel(i.fy_start)}</span>
+        </li>
+      ))}
+      {items.length > SHOW_ITEMS && <li className="more muted">+{items.length - SHOW_ITEMS} more</li>}
+    </ul>
+  );
+}
+
 export default function Bills() {
   const navigate = useNavigate();
   // Filters live in the address, so Back returns to the same list and a filtered list can be bookmarked.
@@ -83,13 +101,18 @@ export default function Bills() {
         <div className="tiles">
           <div className="tile">
             <div className="tile-label">Billed</div>
-            <div className="tile-value">{formatRupees(t.billed_paise)}</div>
-            <div className="tile-sub">{t.credited_paise > 0 ? `${formatRupees(t.credited_paise)} credited` : "Cancelled bills not included"}</div>
+            {/* Net of credit notes and discounts, so a bill settled for less counts at what it was settled for. */}
+            <div className="tile-value">{formatRupees(t.billed_paise - t.credited_paise - t.discount_paise)}</div>
+            <div className="tile-sub">
+              {t.credited_paise + t.discount_paise > 0
+                ? `${formatRupees(t.billed_paise)} before ${formatRupees(t.credited_paise + t.discount_paise)} of credit notes and discounts`
+                : "Cancelled bills not included"}
+            </div>
           </div>
           <div className="tile">
             <div className="tile-label">Received</div>
             <div className="tile-value">{formatRupees(t.collected_paise)}</div>
-            <div className="tile-sub">{t.discount_paise > 0 ? `${formatRupees(t.discount_paise)} let go as discount` : "Payments recorded"}</div>
+            <div className="tile-sub">Payments recorded</div>
           </div>
           <button type="button" className="tile" onClick={() => setFilter({ status: "outstanding" })} aria-label={`Unpaid: ${formatRupees(t.outstanding_paise)} on ${t.outstanding_count} bills. Show them.`}>
             <div className="tile-label">To collect</div>
@@ -159,6 +182,7 @@ export default function Bills() {
               <tr>
                 <th>Bill</th>
                 <th>Client</th>
+                <th>Items</th>
                 <th>Status</th>
                 <th className="num">Total</th>
                 <th className="num">Balance</th>
@@ -181,17 +205,27 @@ export default function Bills() {
                     {b.client_name} {b.client_deleted && <span className="badge plain">deleted client</span>}
                     <div className="muted tiny">{[b.client_phone, b.client_city].filter(Boolean).join(" · ")}</div>
                   </td>
+                  <td className="c-items">
+                    <ItemBullets items={b.items} />
+                  </td>
                   <td className="c-status nowrap">
                     <StatusBadge bill={b} />
                     {b.due_date && b.state === "open" && <div className="muted tiny">Due {formatDate(b.due_date)}</div>}
                   </td>
-                  <td className="c-total num">{formatRupees(b.total_paise)}</td>
+                  <td className="c-total num">
+                    {formatRupees(b.total_paise - b.credited_paise - b.discount_paise)}
+                    {b.credited_paise + b.discount_paise > 0 && b.state !== "cancelled" && (
+                      <div className="muted tiny" title="Reduced by a credit note or discount">
+                        of {formatRupees(b.total_paise)}
+                      </div>
+                    )}
+                  </td>
                   <td className="c-balance num">{b.state === "open" ? formatRupees(b.balance_paise) : <span className="muted">–</span>}</td>
                 </tr>
               ))}
               {data && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="empty-cell">
+                  <td colSpan={6} className="empty-cell">
                     {loading ? (
                       "Loading…"
                     ) : filtered ? (

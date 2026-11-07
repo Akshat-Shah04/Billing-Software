@@ -1,5 +1,12 @@
 import type { Settings } from "../types";
 
+/** True when Settings has at least one payment detail filled in (otherwise bills print no payment section). */
+export function hasPaymentDetails(org: Settings): boolean {
+  return [org.bank_account_holder, org.bank_name, org.bank_account_number, org.bank_ifsc, org.bank_branch, org.upi_id, org.payment_instructions].some(
+    (v) => (v ?? "").trim() !== "",
+  );
+}
+
 /** The firm's bank / UPI details, shown on a bill so the client knows where to pay. Shows nothing if empty. */
 export default function PaymentDetails({ org }: { org: Settings | null }) {
   if (!org) return null;
