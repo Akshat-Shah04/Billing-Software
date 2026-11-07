@@ -1,0 +1,13 @@
+{
+  "name": "billing-docs-pdf",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Builds the PDF versions of the documentation (needs Microsoft Edge or Google Chrome installed).",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "marked": "^18.1.3"
+  }
+}

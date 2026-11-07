@@ -65,6 +65,16 @@ billing-software/
 | [Architecture and development](docs/architecture.md) | How it is built, data model, configuration, tests, installer and releases |
 | [Decision records](docs/decisions.md) | Why each important choice was made |
 
+**PDF copies** of all of these are in [docs/pdf](docs/pdf): one PDF per document, plus `Billing-Software-Documentation.pdf`,
+which has everything in one file with a cover page and clickable contents. They are built from the Markdown files, so after
+editing the docs regenerate them (needs Microsoft Edge or Google Chrome installed):
+
+```bash
+cd docs/pdf-build
+npm install
+npm run build
+```
+
 ## Installing on a new computer (Windows)
 
 For an office, use the installer. It needs nothing installed beforehand.

@@ -46,6 +46,8 @@ client/
 installer/           Inno Setup script, build script, wizard text, restore.cmd
 .github/workflows/   ci.yml (tests) and release.yml (builds the installer)
 docs/                these documents
+  pdf/               PDF copies of every document (and one combined PDF)
+  pdf-build/         the script that makes them: Markdown to HTML to PDF using Edge or Chrome
 ```
 
 ## Data model
