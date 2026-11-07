@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import Icon from "../components/Icon";
 import Message from "../components/Message";
 import PageHeader from "../components/PageHeader";
-import PaymentDetails from "../components/PaymentDetails";
+import PaymentDetails, { hasPaymentDetails } from "../components/PaymentDetails";
 import Sheet from "../components/Sheet";
 import StatusBadge from "../components/StatusBadge";
 import { useLoad, useLogoUrl } from "../hooks";
@@ -125,7 +125,6 @@ export default function BillView() {
               <div className="doc-number">{b.bill_no}</div>
               <div>Date: {formatDate(b.bill_date)}</div>
               {b.due_date && <div>Due: {formatDate(b.due_date)}</div>}
-              <div className="muted tiny">Financial year {fyLabel(b.fy_start)}</div>
               {cancelled && <div className="stamp">Cancelled</div>}
             </div>
           </div>
@@ -144,7 +143,7 @@ export default function BillView() {
               <thead>
                 <tr>
                   <th>Item</th>
-                  <th className="num">Qty</th>
+                  <th className="num">FY</th>
                   <th className="num">Price</th>
                   <th className="num">Amount</th>
                 </tr>
@@ -156,8 +155,11 @@ export default function BillView() {
                       <div className="item-title">{i.description}</div>
                       {i.details && <div className="item-text">{i.details}</div>}
                     </td>
-                    <td className="num">{i.quantity}</td>
-                    <td className="num">{formatRupees(i.unit_price_paise)}</td>
+                    <td className="num">{fyLabel(i.fy_start)}</td>
+                    <td className="num">
+                      {formatRupees(i.unit_price_paise)}
+                      {i.quantity > 1 && <div className="muted tiny">× {i.quantity}</div>}
+                    </td>
                     <td className="num">{formatRupees(i.line_total_paise)}</td>
                   </tr>
                 ))}
@@ -191,6 +193,14 @@ export default function BillView() {
           )}
 
           {!cancelled && <PaymentDetails org={org} />}
+          {!cancelled && admin && org && !hasPaymentDetails(org) && (
+            <div className="no-print" style={{ marginTop: "1.25rem" }}>
+              <Message kind="warn">
+                No payment details are printed on this bill because none are set. Add your bank account and UPI ID in{" "}
+                <Link to="/settings">Settings → Payment details</Link>; they then appear on every bill and PDF.
+              </Message>
+            </div>
+          )}
         </article>
 
         {/* ---------- Status and actions ---------- */}

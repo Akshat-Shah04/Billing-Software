@@ -182,7 +182,7 @@ function billedTo(pen: Pen, d: any) {
   pen.y += 12;
 }
 
-const COLS = { qty: 44, price: 84, amount: 92 };
+const COLS = { qty: 56, price: 84, amount: 92 }; // "qty" is the financial year column now
 
 function itemsTable(pen: Pen, items: any[]) {
   const right = PAGE.width - PAGE.margin;
@@ -193,7 +193,7 @@ function itemsTable(pen: Pen, items: any[]) {
 
   const head = () => {
     pen.draw("ITEM", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
-    pen.draw("QTY", xQty, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
+    pen.draw("FY", xQty, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
     pen.draw("PRICE", xPrice, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
     pen.draw("AMOUNT", xAmount, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
     pen.y += 13;
@@ -210,8 +210,10 @@ function itemsTable(pen: Pen, items: any[]) {
     pen.ensure(height + 4, head);
     titleLines.forEach((l, n) => pen.draw(l, PAGE.margin, pen.y + n * 15, { size: 11.5, bold: true }));
     detailLines.forEach((l, n) => pen.draw(l, PAGE.margin, pen.y + titleLines.length * 15 + 3 + n * 11.5, { size: 8.5, color: MUTED }));
-    pen.draw(String(it.quantity), xQty, pen.y + 1.5, { size: 10, align: "right" });
+    pen.draw(it.fy_start ? fyLabelOf(it.fy_start) : "", xQty, pen.y + 1.5, { size: 10, align: "right" });
     pen.draw(money(it.unit_price_paise), xPrice, pen.y + 1.5, { size: 10, align: "right" });
+    // A quantity is only shown when it is more than one (older bills), under the price.
+    if (it.quantity > 1) pen.draw(`x ${it.quantity}`, xPrice, pen.y + 15, { size: 8.5, color: MUTED, align: "right" });
     pen.draw(money(it.line_total_paise), xAmount, pen.y + 1.5, { size: 10, bold: true, align: "right" });
     pen.y += height;
     pen.rule(pen.y - 5);
@@ -326,7 +328,6 @@ export function renderBillPdf(bill: any, org: Settings, logo: Logo | null): Prom
       number: bill.bill_no,
       lines: [
         { text: prettyDate(bill.bill_date), bold: true, color: INK },
-        { text: `Financial year ${fyLabelOf(bill.fy_start)}` },
         ...(bill.due_date && !cancelled ? [{ text: `Due ${prettyDate(bill.due_date)}` }] : []),
       ],
       tag: cancelled ? { text: "CANCELLED", color: RED } : bill.state === "paid" ? { text: "PAID", color: GREEN } : undefined,

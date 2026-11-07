@@ -90,7 +90,7 @@ export async function getBill(q: Queryable, id: number) {
 
   const items = (
     await q.query(
-      `SELECT id, service_id, description, details, quantity, unit_price_paise, line_total_paise
+      `SELECT id, service_id, description, details, quantity, unit_price_paise, line_total_paise, fy_start
        FROM bill_items WHERE bill_id = $1 ORDER BY id`,
       [id],
     )
@@ -164,6 +164,7 @@ export async function billSnapshot(q: Queryable, id: number): Promise<BillSnapsh
       quantity: i.quantity,
       unit_price_paise: i.unit_price_paise,
       line_total_paise: i.line_total_paise,
+      fy_start: i.fy_start,
     })),
   };
 }

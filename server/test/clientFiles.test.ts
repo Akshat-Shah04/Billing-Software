@@ -91,7 +91,10 @@ describe("client folders", () => {
     expect(html).toMatch(/\.it\{font-size:1\.1rem;font-weight:700/);
     expect(html).toMatch(/\.d\{[^}]*font-size:\.8rem/);
     expect(html).toContain("05 Nov 2026");
-    expect(html).toContain("Financial year 2026-27");
+    // The financial year is shown per item (FY column), not as a line at the top of the bill.
+    expect(html).not.toContain("Financial year");
+    expect(html).toContain('<th class="n">FY</th>');
+    expect(html).toContain('<td class="n">2026-27</td>');
     expect(html).toContain("GST @ 18%");
     expect(html).toContain("Pay in 15 days");
     expect(html).toContain("@page{margin:0}"); // no browser header/footer when printing

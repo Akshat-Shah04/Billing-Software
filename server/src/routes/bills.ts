@@ -141,7 +141,7 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
            rate, totals.gst_paise, totals.total_paise, req.user!.id],
         )
       ).rows[0];
-      await insertItems(q, bill.id, input.items);
+      await insertItems(q, bill.id, input.items, fyStart);
       await addHistory(q, { billId: bill.id, userId: req.user!.id, action: "created", summary: `Bill ${billNo} created for ${rupeesText(totals.total_paise)}` });
       return bill.id;
     });
@@ -192,7 +192,7 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
         total_paise: totals.total_paise,
         items: input.items.map((i) => ({
           service_id: i.service_id ?? null, description: i.description, details: i.details, quantity: i.quantity,
-          unit_price_paise: i.unit_price_paise, line_total_paise: i.quantity * i.unit_price_paise,
+          unit_price_paise: i.unit_price_paise, line_total_paise: i.quantity * i.unit_price_paise, fy_start: i.fy_start ?? row.fy_start,
         })),
       };
 
@@ -222,7 +222,7 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
         [id, input.client_id, newDate, newDue ?? null, input.notes, totals.subtotal_paise, totals.gst_paise, totals.total_paise, req.user!.id],
       );
       await q.query("DELETE FROM bill_items WHERE bill_id = $1", [id]);
-      await insertItems(q, id, input.items);
+      await insertItems(q, id, input.items, row.fy_start);
       await addHistory(q, { billId: id, userId: req.user!.id, action: "edited", summary: changes.join("; "), before });
       return { changed: true, oldClientId: row.client_id };
     });

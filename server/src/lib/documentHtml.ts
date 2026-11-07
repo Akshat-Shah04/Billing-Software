@@ -42,10 +42,10 @@ function itemsTable(items: any[]): string {
   const rows = items
     .map(
       (i) => `<tr><td><div class="it">${esc(i.description)}</div>${i.details ? `<div class="d">${esc(i.details)}</div>` : ""}</td>
-<td class="n">${i.quantity}</td><td class="n">${money(i.unit_price_paise)}</td><td class="n">${money(i.line_total_paise)}</td></tr>`,
+<td class="n">${i.fy_start ? fyLabelOf(i.fy_start) : ""}</td><td class="n">${money(i.unit_price_paise)}${i.quantity > 1 ? `<div class="d">× ${i.quantity}</div>` : ""}</td><td class="n">${money(i.line_total_paise)}</td></tr>`,
     )
     .join("\n");
-  return `<table><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr></thead><tbody>
+  return `<table><thead><tr><th>Item</th><th class="n">FY</th><th class="n">Price</th><th class="n">Amount</th></tr></thead><tbody>
 ${rows}
 </tbody></table>`;
 }
@@ -97,7 +97,7 @@ ${bill.discount_paise > 0 ? `<div><span>Discount</span><span>− ${money(bill.di
   const body = `${cancelled ? '<div class="stamp">CANCELLED</div>' : ""}
 <div class="head">${firmHeader(org, logoUri)}
 <div style="text-align:right"><div class="id">${esc(bill.bill_no)}</div><div><strong>${prettyDate(bill.bill_date)}</strong></div>
-<div class="m">Financial year ${fyLabelOf(bill.fy_start)}</div>${bill.due_date && !cancelled ? `<div class="m">Due ${prettyDate(bill.due_date)}</div>` : ""}
+${bill.due_date && !cancelled ? `<div class="m">Due ${prettyDate(bill.due_date)}</div>` : ""}
 ${cancelled ? '<div class="tag bad">CANCELLED</div>' : bill.state === "paid" ? '<div class="tag paid">PAID</div>' : ""}</div></div>
 ${billedTo(bill)}
 ${itemsTable(bill.items)}
