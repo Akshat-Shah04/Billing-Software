@@ -16,7 +16,8 @@ export async function prepareLogo(file: File): Promise<Blob> {
   }
 
   const scale = Math.min(1, MAX_WIDTH / bitmap.width, MAX_HEIGHT / bitmap.height);
-  if (scale === 1 && file.size <= KEEP_AS_IS_BELOW) {
+  // The server stores PNG or JPEG only (they work in every PDF and browser), so WebP is always converted.
+  if (scale === 1 && file.size <= KEEP_AS_IS_BELOW && file.type !== "image/webp") {
     bitmap.close();
     return file; // already small enough: keep the original bytes untouched
   }

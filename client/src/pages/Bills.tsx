@@ -1,108 +1,217 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { api, qs } from "../api";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { api, downloadFile, qs } from "../api";
+import Icon from "../components/Icon";
+import Message from "../components/Message";
+import PageHeader from "../components/PageHeader";
 import Pager from "../components/Pager";
+import Segmented from "../components/Segmented";
+import StatusBadge from "../components/StatusBadge";
 import { useDebounced, useLoad } from "../hooks";
 import { formatDate, formatRupees, fyLabel } from "../money";
-import type { BillSummary, FinancialYear, Page } from "../types";
+import type { BillSummary, BillsTotals, Client, FinancialYear, Page } from "../types";
+
+type Status = "" | "outstanding" | "overdue" | "paid" | "cancelled";
+const STATUS_OPTIONS: { value: Status; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "outstanding", label: "Unpaid" },
+  { value: "overdue", label: "Overdue" },
+  { value: "paid", label: "Paid" },
+  { value: "cancelled", label: "Cancelled" },
+];
 
 export default function Bills() {
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const [fy, setFy] = useState(""); // "" = all financial years, otherwise the start year e.g. "2026"
-  const [page, setPage] = useState(1);
+  // Filters live in the address, so Back returns to the same list and a filtered list can be bookmarked.
+  const [params, setParams] = useSearchParams();
+  const fy = params.get("fy") ?? "";
+  const status = (params.get("status") ?? "") as Status;
+  const clientId = params.get("client_id") ?? "";
+  const page = Number(params.get("page") ?? 1) || 1;
+  const [search, setSearch] = useState(params.get("q") ?? "");
   const q = useDebounced(search);
+  const [exportError, setExportError] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  function setFilter(patch: Record<string, string>) {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    if (!("page" in patch)) next.delete("page");
+    setParams(next, { replace: true });
+  }
 
   const years = useLoad(() => api<{ items: FinancialYear[] }>("/bills/financial-years"), "years");
+  const totals = useLoad(() => api<BillsTotals>(`/bills/summary${qs({ fy })}`), `sum|${fy}`);
+  const client = useLoad(() => (clientId ? api<Client>(`/clients/${clientId}`) : Promise.resolve(null)), `client|${clientId}`);
   const { data, error, loading } = useLoad(
-    () => api<Page<BillSummary>>(`/bills${qs({ q, fy, page })}`),
-    `${q}|${fy}|${page}`,
+    () => api<Page<BillSummary>>(`/bills${qs({ q, fy, status, client_id: clientId, page })}`),
+    `${q}|${fy}|${status}|${clientId}|${page}`,
   );
+
+  async function exportCsv() {
+    setExportError("");
+    setExporting(true);
+    try {
+      await downloadFile(`/exports/bills.csv${qs({ q, fy, status, client_id: clientId })}`, "bills.csv");
+    } catch (e) {
+      setExportError((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const t = totals.data;
+  const filtered = Boolean(q || fy || status || clientId);
 
   return (
     <>
-      <div className="row between">
-        <h1>Bills</h1>
+      <PageHeader title="Bills" subtitle={fy ? `Financial year ${fyLabel(Number(fy))}` : "All financial years"}>
+        <button onClick={exportCsv} disabled={exporting} title="Download the bills shown below as a spreadsheet (CSV)">
+          <Icon name="download" />
+          <span className="btn-label-sm">{exporting ? "Preparing…" : "Export"}</span>
+        </button>
         <Link to="/bills/new" className="btn primary">
-          Create bill
+          <Icon name="plus" />
+          New bill
         </Link>
-      </div>
+      </PageHeader>
 
-      <div className="card">
-        <div className="row" style={{ marginBottom: ".75rem" }}>
-          <div className="field" style={{ flex: 1, minWidth: 240 }}>
+      {t && (
+        <div className="tiles">
+          <div className="tile">
+            <div className="tile-label">Billed</div>
+            <div className="tile-value">{formatRupees(t.billed_paise)}</div>
+            <div className="tile-sub">{t.credited_paise > 0 ? `${formatRupees(t.credited_paise)} credited` : "Cancelled bills not included"}</div>
+          </div>
+          <div className="tile">
+            <div className="tile-label">Received</div>
+            <div className="tile-value">{formatRupees(t.collected_paise)}</div>
+            <div className="tile-sub">{t.discount_paise > 0 ? `${formatRupees(t.discount_paise)} let go as discount` : "Payments recorded"}</div>
+          </div>
+          <button type="button" className="tile" onClick={() => setFilter({ status: "outstanding" })} aria-label={`Unpaid: ${formatRupees(t.outstanding_paise)} on ${t.outstanding_count} bills. Show them.`}>
+            <div className="tile-label">To collect</div>
+            <div className="tile-value">{formatRupees(t.outstanding_paise)}</div>
+            <div className="tile-sub">
+              {t.outstanding_count} {t.outstanding_count === 1 ? "bill" : "bills"} unpaid
+            </div>
+          </button>
+          <button type="button" className={`tile${t.overdue_count > 0 ? " alert" : ""}`} onClick={() => setFilter({ status: "overdue" })} aria-label={`Overdue: ${formatRupees(t.overdue_paise)} on ${t.overdue_count} bills. Show them.`}>
+            <div className="tile-label">
+              {t.overdue_count > 0 && <span className="badge danger">Overdue</span>}
+              {t.overdue_count === 0 && "Overdue"}
+            </div>
+            <div className="tile-value">{formatRupees(t.overdue_paise)}</div>
+            <div className="tile-sub">
+              {t.overdue_count === 0 ? "Nothing past its due date" : `${t.overdue_count} ${t.overdue_count === 1 ? "bill" : "bills"} past due date`}
+            </div>
+          </button>
+        </div>
+      )}
+
+      {exportError && <Message kind="error">{exportError}</Message>}
+      {clientId && (
+        <Message kind="info">
+          <span>
+            Showing bills for <strong>{client.data?.name ?? "this client"}</strong>.{" "}
+            <button className="link" onClick={() => setFilter({ client_id: "" })}>
+              Show all clients
+            </button>
+          </span>
+        </Message>
+      )}
+
+      <div className="card flush">
+        <div className="filters">
+          <div className="search">
+            <Icon name="search" />
             <input
-              placeholder="Search by client name or bill number (e.g. INV-000012)"
+              type="search"
+              aria-label="Search bills"
+              placeholder="Search client or bill number"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
-                setPage(1);
+                setFilter({ q: e.target.value });
               }}
             />
           </div>
-          <div className="field" style={{ width: 200 }}>
-            <select
-              aria-label="Financial year"
-              value={fy}
-              onChange={(e) => {
-                setFy(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">All financial years</option>
-              {years.data?.items.map((y) => (
-                <option key={y.fy_start} value={y.fy_start}>
-                  FY {y.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Segmented label="Show bills" options={STATUS_OPTIONS} value={status} onChange={(v) => setFilter({ status: v })} />
+          <select aria-label="Financial year" value={fy} onChange={(e) => setFilter({ fy: e.target.value })}>
+            <option value="">All years</option>
+            {years.data?.items.map((y) => (
+              <option key={y.fy_start} value={y.fy_start}>
+                FY {y.label}
+              </option>
+            ))}
+          </select>
         </div>
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="card-pad">
+            <Message kind="error">{error}</Message>
+          </div>
+        )}
         <div className="table-wrap">
           <table className="table-bills">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Bill no.</th>
+                <th>Bill</th>
                 <th>Client</th>
+                <th>Status</th>
                 <th className="num">Total</th>
+                <th className="num">Balance</th>
               </tr>
             </thead>
             <tbody>
               {data?.items.map((b) => (
-                <tr key={b.id} className="clickable" onClick={() => navigate(`/bills/${b.id}`)}>
-                  <td className="nowrap">
-                    <div className="bill-date">{formatDate(b.bill_date)}</div>
-                    <div className="muted small">FY {fyLabel(b.fy_start)}</div>
+                <tr key={b.id} className={`clickable${b.state === "cancelled" ? " dim" : ""}`} onClick={() => navigate(`/bills/${b.id}`)}>
+                  <td className="c-bill nowrap">
+                    <div className="bill-id">
+                      <Link to={`/bills/${b.id}`} onClick={(e) => e.stopPropagation()}>
+                        {b.bill_no}
+                      </Link>
+                    </div>
+                    <div className="muted tiny">
+                      {formatDate(b.bill_date)} · FY {fyLabel(b.fy_start)}
+                    </div>
                   </td>
-                  <td className="bill-id nowrap">
-                    <Link to={`/bills/${b.id}`} onClick={(e) => e.stopPropagation()}>
-                      {b.bill_no}
-                    </Link>
+                  <td className="c-client">
+                    {b.client_name} {b.client_deleted && <span className="badge plain">deleted client</span>}
+                    <div className="muted tiny">{[b.client_phone, b.client_city].filter(Boolean).join(" · ")}</div>
                   </td>
-                  <td>
-                    {b.client_name} {b.client_deleted && <span className="badge warn">deleted</span>}
-                    <div className="muted small">{[b.client_phone, b.client_city].filter(Boolean).join(" · ")}</div>
+                  <td className="c-status nowrap">
+                    <StatusBadge bill={b} />
+                    {b.due_date && b.state === "open" && <div className="muted tiny">Due {formatDate(b.due_date)}</div>}
                   </td>
-                  <td className="num nowrap">{formatRupees(b.total_paise)}</td>
+                  <td className="c-total num">{formatRupees(b.total_paise)}</td>
+                  <td className="c-balance num">{b.state === "open" ? formatRupees(b.balance_paise) : <span className="muted">–</span>}</td>
                 </tr>
               ))}
               {data && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="empty-cell">
-                    {loading
-                      ? "Loading…"
-                      : q || fy
-                        ? "No bills match your search."
-                        : "No bills yet. Create the first one."}
+                  <td colSpan={5} className="empty-cell">
+                    {loading ? (
+                      "Loading…"
+                    ) : filtered ? (
+                      <div className="empty">
+                        <strong>No matching bills</strong>
+                        Try another search, status or year.
+                      </div>
+                    ) : (
+                      <div className="empty">
+                        <strong>No bills yet</strong>
+                        <Link to="/bills/new">Create the first bill</Link>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        {data && <Pager page={data.page} limit={data.limit} total={data.total} onPage={setPage} />}
+        {data && <Pager page={data.page} limit={data.limit} total={data.total} onPage={(p) => setFilter({ page: String(p) })} />}
       </div>
     </>
   );

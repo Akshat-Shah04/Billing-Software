@@ -14,6 +14,8 @@ let root: string;
 let token = "";
 const auth = () => ({ Authorization: `Bearer ${token}` });
 
+// Bill numbers like 2026-27/0001 contain a slash, which a file name cannot, so saved copies use a dash.
+const fileSafe = (n: string) => n.replace(/\//g, "-");
 const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), "utf8");
 const has = (...p: string[]) => fs.existsSync(path.join(root, ...p));
 const item = (description = "Audit", price = 100_000, details?: string) => [
@@ -78,7 +80,7 @@ describe("client folders", () => {
       .send({ client_id: c.id, bill_date: "2026-11-05", notes: "Pay in 15 days", items: item("Statutory Audit", 2_500_000, "Audit under the Companies Act") });
     await api.put("/api/settings").set(auth()).send({ gst_enabled: false, gst_rate_percent: 18 });
 
-    const file = `${bill.body.bill_no}_2026-11-05.html`;
+    const file = `${fileSafe(bill.body.bill_no)}_2026-11-05.html`;
     expect(has("Bill Writer & Sons", "bills", file)).toBe(true);
     const html = read("Bill Writer & Sons", "bills", file);
     expect(html).toContain(bill.body.bill_no);
@@ -107,7 +109,7 @@ describe("client folders", () => {
       .set(auth())
       .send({ client_id: c.id, items: item("<script>alert(1)</script>", 100, "a & b") });
     const dir = path.join(root, "Escape Co", "bills");
-    const html = fs.readFileSync(path.join(dir, fs.readdirSync(dir).find((f) => f.startsWith(bill.body.bill_no))!), "utf8");
+    const html = fs.readFileSync(path.join(dir, fs.readdirSync(dir).find((f) => f.startsWith(fileSafe(bill.body.bill_no)))!), "utf8");
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain("a &amp; b");
@@ -134,7 +136,7 @@ describe("client folders", () => {
     const res = await api.put(`/api/clients/${c.id}`).set(auth()).send({ name: "New Name Ltd" });
     expect(res.body.folder_name).toBe("New Name Ltd");
     expect(has("Old Name Ltd")).toBe(false);
-    expect(has("New Name Ltd", "bills", `${bill.body.bill_no}_2026-05-01.html`)).toBe(true);
+    expect(has("New Name Ltd", "bills", `${fileSafe(bill.body.bill_no)}_2026-05-01.html`)).toBe(true);
     expect(read("New Name Ltd", "client-details.txt")).toContain("New Name Ltd");
   });
 
@@ -142,7 +144,7 @@ describe("client folders", () => {
     const a = await newClient({ name: "Move From" });
     const b = await newClient({ name: "Move To" });
     const bill = await api.post("/api/bills").set(auth()).send({ client_id: a.id, bill_date: "2026-06-01", items: item() });
-    const no = bill.body.bill_no;
+    const no = fileSafe(bill.body.bill_no);
 
     await api.put(`/api/bills/${bill.body.id}`).set(auth()).send({ client_id: a.id, bill_date: "2026-06-15", items: item() });
     expect(has("Move From", "bills", `${no}_2026-06-01.html`)).toBe(false);

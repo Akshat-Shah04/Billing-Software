@@ -66,9 +66,48 @@ export async function apiUpload<T = unknown>(path: string, file: Blob): Promise<
   return data as T;
 }
 
-export const qs =(params: Record<string, string | number | boolean | undefined | null>) => {
+export const qs = (params: Record<string, string | number | boolean | undefined | null>) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") p.set(k, String(v));
   const s = p.toString();
   return s ? `?${s}` : "";
 };
+
+/** Fetches a file with the login token and saves it with the name the server suggests (or `fallbackName`). */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`/api${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (res.status === 401) onUnauthorized();
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(res.status, data?.error ?? "Download failed");
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  const plain = /filename="([^"]+)"/i.exec(disposition);
+  const name = star ? decodeURIComponent(star[1]) : plain ? plain[1] : fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Opens a PDF (fetched with the login token) in a new browser tab. */
+export async function openPdf(path: string): Promise<void> {
+  // The tab is opened first, synchronously, so pop-up blockers allow it; the PDF is put into it when it arrives.
+  const tab = window.open("", "_blank");
+  try {
+    const blob = await apiBlob(path);
+    const url = URL.createObjectURL(blob);
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    tab?.close();
+    throw e;
+  }
+}

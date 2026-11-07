@@ -1,41 +1,34 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "../db/index.js";
-import { getBill } from "../routes/bills.js";
 import { loadLogo, loadSettings, type Settings } from "../routes/settings.js";
+import { getBill, getCreditNote } from "./billData.js";
+import { renderBillHtml, renderCreditNoteHtml } from "./documentHtml.js";
+import { fyLabelOf, money, prettyDate, safeFileName } from "./format.js";
 
 /**
  * A readable backup kept on the PC's disk, one folder per client:
  *
  *   <client files folder>/
  *     Rajesh Patel/
- *       client-details.txt     the client's details and a list of their bills
+ *       client-details.txt     the client's details, their bills and what they owe
  *       client-data.json       the same data in full, for programs
  *       bills/
- *         INV-000007_2026-11-05.html    each bill, printable in any browser
+ *         2026-27-0001_2026-11-05.html     each bill, printable in any browser
+ *       credit-notes/
+ *         CN-2026-27-0001_2026-11-20.html  each credit note
  *
  * Folders are only ever added to or renamed, never deleted, even when a client is deleted in the app.
  * A problem writing files is logged and shown in Settings, but never stops a bill from being saved.
  */
 export interface ClientFiles {
   syncClient(clientId: number): Promise<void>;
-  /** Writes one bill's file, then refreshes that client's summary files. */
+  /** Writes one bill's file (and its credit notes), then refreshes that client's summary files. */
   syncBill(billId: number): Promise<void>;
   /** Rebuilds every client's folder from the database. Returns how many clients were written. */
   syncAll(): Promise<number>;
   status(): { enabled: boolean; dir: string | null; lastError: string | null; lastSync: string | null };
 }
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" });
-const money = (paise: number) => rupees.format(paise / 100);
-const prettyDate = (iso: string) => {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${String(d).padStart(2, "0")} ${MONTHS[m - 1]} ${y}`;
-};
-const fyLabel = (start: number) => `${start}-${String(start + 1).slice(2)}`;
-const esc = (s: unknown) =>
-  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** Turns a client name into a safe Windows folder name. */
 export function folderBase(name: string): string {
@@ -49,6 +42,9 @@ export function folderBase(name: string): string {
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(s)) s = `${s}_`; // reserved device names
   return s;
 }
+
+// Files this program writes into bills/ and credit-notes/. Only files that look like this are ever tidied away.
+const GENERATED = /^[A-Za-z0-9.-]+_\d{4}-\d{2}-\d{2}\.html$/;
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -65,69 +61,12 @@ async function writeAtomic(file: string, data: string) {
   await fs.rename(tmp, file);
 }
 
-/** The firm's bank / UPI details as label-value pairs, leaving out anything not filled in. */
-export function paymentLines(org: Settings): [string, string][] {
-  const all: [string, string][] = [
-    ["Account name", org.bank_account_holder],
-    ["Bank", org.bank_name],
-    ["Account number", org.bank_account_number],
-    ["IFSC", org.bank_ifsc],
-    ["Branch", org.bank_branch],
-    ["UPI ID", org.upi_id],
-  ];
-  return all.filter(([, v]) => v);
-}
-
-export function renderBillHtml(bill: any, org: Settings, logoUri: string | null = null): string {
-  const pay = paymentLines(org);
-  const paymentHtml =
-    pay.length || org.payment_instructions
-      ? `<div class="pay"><div class="m">Payment details: please pay to</div>
-<table class="pt">${pay.map(([k, v]) => `<tr><td class="m">${esc(k)}</td><td><strong>${esc(v)}</strong></td></tr>`).join("")}</table>
-${org.payment_instructions ? `<div style="white-space:pre-line">${esc(org.payment_instructions)}</div>` : ""}</div>`
-      : "";
-  const rows = bill.items
-    .map(
-      (i: any) => `<tr><td><div class="it">${esc(i.description)}</div>${i.details ? `<div class="d">${esc(i.details)}</div>` : ""}</td>
-<td class="n">${i.quantity}</td><td class="n">${money(i.unit_price_paise)}</td><td class="n">${money(i.line_total_paise)}</td></tr>`,
-    )
-    .join("\n");
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${esc(bill.bill_no)} - ${esc(bill.client_name)}</title>
-<style>
-body{font:15px/1.5 system-ui,Segoe UI,Arial,sans-serif;color:#1d2733;max-width:780px;margin:2rem auto;padding:0 1rem}
-h1{margin:0 0 .25rem;font-size:1.5rem} .m{color:#667085} .head{display:flex;justify-content:space-between;gap:1rem;margin-bottom:1.25rem}
-table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:.5rem;border-bottom:1px solid #d9dee6;vertical-align:top}
-th{font-size:.8rem;text-transform:uppercase;color:#667085} .n{text-align:right} .it{font-size:1.1rem;font-weight:700;line-height:1.3}
-.d{color:#667085;font-size:.8rem;line-height:1.45;margin-top:.2rem;white-space:pre-line}
-.t{margin:1rem 0 0 auto;width:300px} .t div{display:flex;justify-content:space-between;padding:.15rem 0}
-.g{border-top:2px solid #1d2733;margin-top:.3rem;padding-top:.35rem;font-weight:700;font-size:1.1rem} .id{font-size:1.2rem;font-weight:700}
-.logo{max-height:80px;max-width:260px;display:block;margin-bottom:.5rem}
-.pay{margin-top:1.25rem;border:1px solid #d9dee6;border-radius:6px;padding:.75rem 1rem;break-inside:avoid}
-.pt{width:auto;margin:.25rem 0 .5rem} .pt td{border:0;padding:.1rem 1rem .1rem 0}
-@page{margin:0}
-@media print{body{margin:0;max-width:none;padding:14mm 16mm}}
-</style></head><body>
-<div class="head"><div>${logoUri ? `<img class="logo" src="${logoUri}" alt="">` : ""}<h1>${esc(org.org_name || "Invoice")}</h1>
-<div class="m" style="white-space:pre-line">${esc(org.org_address)}</div>${org.org_gstin ? `<div class="m">GSTIN: ${esc(org.org_gstin)}</div>` : ""}</div>
-<div style="text-align:right"><div class="id">${esc(bill.bill_no)}</div><div><strong>${prettyDate(bill.bill_date)}</strong></div>
-<div class="m">Financial year ${fyLabel(bill.fy_start)}</div></div></div>
-<div style="margin-bottom:1rem"><div class="m">Billed to</div><strong>${esc(bill.client_name)}</strong>
-${bill.client_address ? `<div style="white-space:pre-line">${esc(bill.client_address)}</div>` : ""}
-<div class="m">${esc([bill.client_city, bill.client_phone].filter(Boolean).join(" · "))}</div>
-${bill.client_gstin ? `<div class="m">GSTIN: ${esc(bill.client_gstin)}</div>` : ""}${bill.client_pan ? `<div class="m">PAN: ${esc(bill.client_pan)}</div>` : ""}</div>
-<table><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr></thead><tbody>
-${rows}
-</tbody></table>
-<div class="t"><div><span>Subtotal</span><span>${money(bill.subtotal_paise)}</span></div>
-${bill.gst_rate_percent > 0 ? `<div><span>GST @ ${bill.gst_rate_percent}%</span><span>${money(bill.gst_paise)}</span></div>` : ""}
-<div class="g"><span>Total</span><span>${money(bill.total_paise)}</span></div></div>
-${bill.notes ? `<p style="white-space:pre-line"><span class="m">Notes</span><br>${esc(bill.notes)}</p>` : ""}
-${paymentHtml}
-<p class="m" style="font-size:.8rem">Created by ${esc(bill.created_by_name)}${bill.updated_by_name ? `, last edited by ${esc(bill.updated_by_name)}` : ""}.
-This is an automatic copy kept for backup; the original is in Billing Software.</p>
-</body></html>
-`;
+function statusText(b: any): string {
+  if (b.state === "cancelled") return "CANCELLED";
+  if (b.state === "paid") return "Paid";
+  if (b.state === "credited") return "Credited";
+  if (b.state === "written_off") return "Written off";
+  return `${b.paid_paise > 0 ? "Part paid, " : ""}balance ${money(b.balance_paise)}${b.overdue ? " (OVERDUE)" : ""}`;
 }
 
 export function createClientFiles(db: Db, dir: string | null): ClientFiles {
@@ -170,11 +109,24 @@ export function createClientFiles(db: Db, dir: string | null): ClientFiles {
     return desired;
   }
 
-  // The firm's details and logo, loaded once per operation. The logo is embedded in each bill copy
+  // The firm's details and logo, loaded once per operation. The logo is embedded in each copy
   // so the file still shows it when opened on its own, offline, or emailed.
   async function loadOrg(): Promise<{ org: Settings; logoUri: string | null }> {
     const [org, logo] = await Promise.all([loadSettings(db), loadLogo(db)]);
     return { org, logoUri: logo ? `data:${logo.contentType};base64,${logo.data.toString("base64")}` : null };
+  }
+
+  /** Writes the files in `folder` for the given documents, and removes copies that no longer belong. */
+  async function writeDocuments(folder: string, docs: { file: string; html: string; always: boolean }[]) {
+    await fs.mkdir(folder, { recursive: true });
+    const existing = (await fs.readdir(folder)).filter((f) => GENERATED.test(f));
+    const wanted = new Set(docs.map((d) => d.file));
+    for (const d of docs) {
+      if (!d.always && existing.includes(d.file)) continue; // unchanged and already there
+      await writeAtomic(path.join(folder, d.file), d.html);
+    }
+    // Remove copies that no longer match: a bill whose date changed, or one that moved to another client.
+    for (const f of existing) if (!wanted.has(f)) await fs.rm(path.join(folder, f), { force: true });
   }
 
   async function writeClient(clientId: number, onlyBillId: number | null, firm: { org: Settings; logoUri: string | null }) {
@@ -182,24 +134,42 @@ export function createClientFiles(db: Db, dir: string | null): ClientFiles {
     if (!client) return;
     const folder = await resolveFolder(client);
     const clientDir = path.join(dir!, folder);
-    const billsDir = path.join(clientDir, "bills");
-    await fs.mkdir(billsDir, { recursive: true });
+    await fs.mkdir(clientDir, { recursive: true });
 
-    const ids = (await db.query<{ id: number }>("SELECT id FROM bills WHERE client_id = $1 ORDER BY bill_date, id", [clientId])).rows;
-    const bills = [];
-    for (const { id } of ids) bills.push(await getBill(db, id));
+    const billIds = (await db.query<{ id: number }>("SELECT id FROM bills WHERE client_id = $1 ORDER BY bill_date, id", [clientId])).rows;
+    const bills: any[] = [];
+    for (const { id } of billIds) bills.push(await getBill(db, id));
 
-    const fileFor = (b: any) => `${b.bill_no}_${b.bill_date}.html`;
-    const existing = (await fs.readdir(billsDir)).filter((f) => /^INV-\d+_.*\.html$/.test(f));
-    const wanted = new Set(bills.map(fileFor));
+    const cnIds = (
+      await db.query<{ id: number }>(
+        "SELECT n.id FROM credit_notes n JOIN bills b ON b.id = n.bill_id WHERE b.client_id = $1 ORDER BY n.cn_date, n.id",
+        [clientId],
+      )
+    ).rows;
+    const creditNotes: any[] = [];
+    for (const { id } of cnIds) creditNotes.push(await getCreditNote(db, id));
 
-    for (const b of bills) {
-      if (onlyBillId !== null && b.id !== onlyBillId && existing.includes(fileFor(b))) continue;
-      await writeAtomic(path.join(billsDir, fileFor(b)), renderBillHtml(b, firm.org, firm.logoUri));
+    // Rewrite everything, or (after one bill changed) just that bill and its credit notes.
+    await writeDocuments(
+      path.join(clientDir, "bills"),
+      bills.map((b) => ({
+        file: `${safeFileName(b.bill_no)}_${b.bill_date}.html`,
+        html: renderBillHtml(b, firm.org, firm.logoUri),
+        always: onlyBillId === null || b.id === onlyBillId,
+      })),
+    );
+    if (creditNotes.length || (await exists(path.join(clientDir, "credit-notes")))) {
+      await writeDocuments(
+        path.join(clientDir, "credit-notes"),
+        creditNotes.map((c) => ({
+          file: `${safeFileName(c.cn_no)}_${c.cn_date}.html`,
+          html: renderCreditNoteHtml(c, firm.org, firm.logoUri),
+          always: onlyBillId === null || c.bill_id === onlyBillId,
+        })),
+      );
     }
-    // Remove copies that no longer match: a bill whose date changed, or that moved to another client.
-    for (const f of existing) if (!wanted.has(f)) await fs.rm(path.join(billsDir, f), { force: true });
 
+    const owed = bills.reduce((sum, b) => sum + Math.max(b.balance_paise, 0), 0);
     const lines = [
       "CLIENT DETAILS",
       "==============",
@@ -213,11 +183,16 @@ export function createClientFiles(db: Db, dir: string | null): ClientFiles {
       `GSTIN:        ${client.gstin ?? ""}`,
       `Referred by:  ${client.referred_by ?? ""}`,
       "",
+      `OUTSTANDING:  ${money(owed)}`,
+      "",
       `BILLS (${bills.length})`,
       "-----------",
       ...bills.map(
-        (b) => `${b.bill_no}   ${prettyDate(b.bill_date)}   FY ${fyLabel(b.fy_start)}   ${money(b.total_paise)}`,
+        (b) => `${b.bill_no}   ${prettyDate(b.bill_date)}   FY ${fyLabelOf(b.fy_start)}   ${money(b.total_paise)}   ${statusText(b)}`,
       ),
+      ...(creditNotes.length
+        ? ["", `CREDIT NOTES (${creditNotes.length})`, "-----------------", ...creditNotes.map((c) => `${c.cn_no}   ${prettyDate(c.cn_date)}   against ${c.bill_no}   ${money(c.total_paise)}   ${c.reason}`)]
+        : []),
       "",
       `Updated automatically: ${new Date().toLocaleString("en-IN")}`,
       "Do not edit these files: they are rewritten whenever the client or a bill changes.",
@@ -225,7 +200,7 @@ export function createClientFiles(db: Db, dir: string | null): ClientFiles {
     await writeAtomic(path.join(clientDir, "client-details.txt"), "﻿" + lines.join("\r\n") + "\r\n");
     await writeAtomic(
       path.join(clientDir, "client-data.json"),
-      JSON.stringify({ exported_at: new Date().toISOString(), client, bills }, null, 2),
+      JSON.stringify({ exported_at: new Date().toISOString(), client, bills, credit_notes: creditNotes }, null, 2),
     );
   }
 

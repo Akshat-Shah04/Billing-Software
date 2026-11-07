@@ -20,6 +20,10 @@ export interface Settings {
   payment_instructions: string;
   gst_enabled: boolean;
   gst_rate_percent: number;
+  /** Days from the bill date to the default due date. */
+  payment_terms_days: number;
+  /** Prefixed to 10-digit phone numbers when opening WhatsApp (91 = India). */
+  default_country_code: string;
 }
 
 const TEXT_KEYS = [
@@ -43,6 +47,8 @@ export async function loadSettings(q: Queryable): Promise<Settings> {
     ...text,
     gst_enabled: m.gst_enabled === "true",
     gst_rate_percent: Number(m.gst_rate_percent ?? 18),
+    payment_terms_days: Number(m.payment_terms_days ?? 15),
+    default_country_code: m.default_country_code || "91",
   };
 }
 
@@ -61,10 +67,9 @@ export async function loadLogo(q: Queryable): Promise<Logo | null> {
 }
 
 /** Works out the image type from the file's first bytes (never trust the label the browser sent). */
-export function sniffImageType(b: Buffer): "image/png" | "image/jpeg" | "image/webp" | null {
+export function sniffImageType(b: Buffer): "image/png" | "image/jpeg" | null {
   if (b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
   if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  if (b.length > 12 && b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
   return null; // notably SVG is refused: it can contain scripts
 }
 
@@ -83,6 +88,9 @@ const updateSchema = z.object({
   payment_instructions: optionalText(500),
   gst_enabled: z.boolean(),
   gst_rate_percent: z.number().min(0).max(100),
+  // Optional: when left out, the current value is kept.
+  payment_terms_days: z.number().int().min(0).max(365).optional(),
+  default_country_code: z.string().trim().regex(/^\d{1,4}$/, "Country code must be digits only, for example 91").optional(),
 });
 
 async function withLogoInfo(db: Db) {
@@ -106,6 +114,8 @@ export function settingsRoutes(db: Db, files: ClientFiles): Router {
       ...Object.fromEntries(TEXT_KEYS.map((k) => [k, s[k] ?? ""])),
       gst_enabled: String(s.gst_enabled),
       gst_rate_percent: String(s.gst_rate_percent),
+      ...(s.payment_terms_days !== undefined ? { payment_terms_days: String(s.payment_terms_days) } : {}),
+      ...(s.default_country_code !== undefined ? { default_country_code: s.default_country_code } : {}),
     };
     await db.tx(async (q) => {
       for (const [key, value] of Object.entries(values)) {
@@ -125,18 +135,18 @@ export function settingsRoutes(db: Db, files: ClientFiles): Router {
     res.set("Content-Type", logo.contentType).set("Cache-Control", "private, max-age=0, must-revalidate").send(logo.data);
   });
 
-  // The image is sent as the raw request body (Content-Type image/png, image/jpeg or image/webp), up to 1 MB.
+  // The image is sent as the raw request body (Content-Type image/png or image/jpeg), up to 1 MB.
   router.put(
     "/logo",
     requireAdmin,
-    express.raw({ type: ["image/png", "image/jpeg", "image/webp"], limit: MAX_LOGO_BYTES }),
+    express.raw({ type: ["image/png", "image/jpeg"], limit: MAX_LOGO_BYTES }),
     async (req, res) => {
       const body = req.body as unknown;
       if (!Buffer.isBuffer(body) || body.length === 0) {
-        throw new HttpError(415, "Send the logo as a PNG, JPEG or WebP image");
+        throw new HttpError(415, "Send the logo as a PNG or JPEG image");
       }
       const type = sniffImageType(body);
-      if (!type) throw new HttpError(400, "That file is not a valid PNG, JPEG or WebP image");
+      if (!type) throw new HttpError(400, "That file is not a valid PNG or JPEG image");
       await db.query(
         `INSERT INTO org_logo (id, content_type, data) VALUES (1, $1, $2)
          ON CONFLICT (id) DO UPDATE SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = now()`,

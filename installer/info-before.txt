@@ -7,7 +7,8 @@ Please read this page. It explains exactly what this installer will do to your c
 WHAT IS BILLING SOFTWARE?
 -------------------------
 A billing system for an accountancy firm. It manages clients, services and bills,
-with staff logins, optional GST, bill search and printing.
+with staff logins, optional GST, payments, credit notes, PDF bills you can send on
+WhatsApp, spreadsheet exports, bill search and printing.
 
 It runs as a small web server on THIS computer. Everyone in the office opens it in a
 normal web browser (Chrome, Edge, Firefox). Nothing needs to be installed on the other
@@ -16,7 +17,9 @@ computers.
 
 WHAT YOU NEED
 -------------
- * Windows 10 or Windows 11, 64-bit
+ * Windows 10 (version 1607 or newer) or Windows 11. Any edition (Home, Pro, Enterprise),
+   on 64-bit Intel/AMD PCs, ARM laptops (for example Snapdragon) or 32-bit Windows 10.
+   The installer picks the right version for this PC automatically.
  * Administrator rights on this computer (the installer asks for permission)
  * About 500 MB of free disk space (the database grows as you add bills)
  * Nothing else. The installer includes everything the software needs
@@ -88,7 +91,9 @@ YOUR DATA AND BACKUPS
    and then every 24 hours. The 14 most recent backups are kept in
         C:\ProgramData\BillingSoftware\backups
  * Backups on the same computer do not protect you if the computer fails.
-   Please copy that backups folder to a USB drive or a cloud drive regularly.
+   After installing, open Settings > Backups in the software and add a SECOND LOCATION
+   (a USB drive, a network folder, or a OneDrive / Google Drive folder). Every backup is
+   then copied there automatically, together with the client folders.
 
 
 SECURITY NOTES

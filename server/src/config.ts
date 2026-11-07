@@ -34,6 +34,8 @@ export const config = {
   clientFilesDir: isTest
     ? null
     : process.env.CLIENT_FILES_DIR || (dataDir ? path.join(dataDir, "ClientFiles") : path.resolve("client-files")),
+  // Where database backups are written first (then copied to the second location chosen in Settings).
+  backupDir: isTest ? null : process.env.BACKUP_DIR || (dataDir ? path.join(dataDir, "backups") : path.resolve("backups")),
   jwtSecret: loadJwtSecret(),
   jwtExpiresIn: "8h" as const,
 };
