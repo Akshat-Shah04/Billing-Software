@@ -5,8 +5,8 @@ checks that were done by hand in a running copy of the app, and what has **not**
 
 ## Latest run
 
-- **Date:** 07 Nov 2026, 20:29
-- **Result:** 112 of 112 tests passed, 0 failed
+- **Date:** 07 Nov 2026, 20:52
+- **Result:** 113 of 113 tests passed, 0 failed
 - **Command:** `cd server && npm test` (Vitest + Supertest). Each test file starts its own in-memory PostgreSQL
   (PGlite), so no database setup is needed and tests never touch real data.
 - **Also checked:** `npm run typecheck` in `server/` and `npm run build` in `client/` (TypeScript and production build) both pass.
@@ -16,8 +16,8 @@ checks that were done by hand in a running copy of the app, and what has **not**
 | [`server/test/money.test.ts`](../server/test/money.test.ts) | Money maths | 4 | 4 passed |
 | [`server/test/api.test.ts`](../server/test/api.test.ts) | Core API (v0.1) | 37 | 37 passed |
 | [`server/test/clientFiles.test.ts`](../server/test/clientFiles.test.ts) | Client folders on disk | 15 | 15 passed |
-| [`server/test/v02.test.ts`](../server/test/v02.test.ts) | v0.2 features | 56 | 56 passed |
-| **Total** | | **112** | **112 passed** |
+| [`server/test/v02.test.ts`](../server/test/v02.test.ts) | v0.2 features | 57 | 57 passed |
+| **Total** | | **113** | **113 passed** |
 
 ## Money maths: `money.test.ts`
 
@@ -158,6 +158,7 @@ Numbering, financial year, due dates, payments, credit notes, settling short pay
 
 - ✅ Keeps a year per line, so one bill can cover several years
 - ✅ Records a change of a line's year as an edit, and keeps lines' years when editing
+- ✅ Lists each bill's items (name and year, in order) for the bills page
 - ✅ Refuses a nonsense year on a line
 
 ### Due dates
@@ -247,6 +248,7 @@ Done in a throwaway preview copy (its own database, sample clients and bills), n
 | Client statement CSV | Downloads; running balance matches the bill. |
 | Financial year chosen separately | Bill dated 07 Nov 2026 for FY 2023-24 was numbered 2023-24/0001 and listed under 2023-24. |
 | Financial year per item | Bill form has a Financial year column instead of Qty; the bill page and PDF show an FY column, no financial year line at the top, and "x 3" under the price only for an older line with a quantity. |
+| Items column on Bills | Each bill lists its items as bullet points with their financial year; long bills show the first four and "+N more"; on a phone the items sit under each bill with no sideways scrolling. |
 | Bills totals after settling | Billed tile and Total column show the net amount after credit notes and discounts (e.g. 2,950.00 bill settled at 590.00 shows "590.00 of 2,950.00"). |
 | Settings | Backups section (location, second copy warning, Back up now) and client folders section render; long folder paths wrap. |
 | Clients | List, Bills and Statement links, add/edit sheet. |

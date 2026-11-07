@@ -84,6 +84,8 @@ export interface BillSummary extends Settlement {
   client_phone: string | null;
   client_city: string | null;
   client_deleted: boolean;
+  /** The bill's lines, in order, for the Items column. */
+  items: { description: string; fy_start: number }[];
 }
 
 export interface FinancialYear {

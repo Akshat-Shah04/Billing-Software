@@ -185,6 +185,23 @@ describe("financial year on each bill line", () => {
     expect(h[0].before_data.items[0].fy_start).toBe(2019);
   });
 
+  it("lists each bill's items (name and year, in order) for the bills page", async () => {
+    const c = await newClient("Items Column Co");
+    await newBill(c.id, {
+      bill_date: "2020-08-01",
+      fy_start: 2020,
+      items: [
+        { description: "Income Tax Return", quantity: 1, unit_price_paise: 300_000, fy_start: 2019 },
+        { description: "GST Return Filing", quantity: 1, unit_price_paise: 200_000 },
+      ],
+    });
+    const list = (await api.get(`/api/bills?client_id=${c.id}`).set(auth(staff))).body.items;
+    expect(list[0].items).toEqual([
+      { description: "Income Tax Return", fy_start: 2019 },
+      { description: "GST Return Filing", fy_start: 2020 },
+    ]);
+  });
+
   it("refuses a nonsense year on a line", async () => {
     const c = await newClient("Bad Line Year Co");
     const res = await api.post("/api/bills").set(auth(staff)).send({ client_id: c.id, items: [{ description: "X", quantity: 1, unit_price_paise: 1, fy_start: 1900 }] });

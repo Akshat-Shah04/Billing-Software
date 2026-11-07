@@ -62,6 +62,11 @@ export const BILL_LIST_COLUMNS = `
   b.client_id, c.name AS client_name, c.phone AS client_phone, c.city AS client_city,
   c.gstin AS client_gstin, c.is_deleted AS client_deleted, b.created_at, cu.full_name AS created_by_name`;
 
+/** The bill's lines (name and financial year, in order) for the Items column of the bills list. */
+export const BILL_ITEMS_SUMMARY = `
+  (SELECT COALESCE(json_agg(json_build_object('description', bi.description, 'fy_start', bi.fy_start) ORDER BY bi.id), '[]'::json)
+   FROM bill_items bi WHERE bi.bill_id = b.id) AS items`;
+
 /** Adds balance, state and overdue to a row from BILL_LIST_COLUMNS. */
 export function withSettlement<T extends { total_paise: number; status: string; due_date: string | null; paid_paise: number; credited_paise: number; discount_paise: number }>(row: T) {
   return { ...row, ...settle(row, row.paid_paise, row.credited_paise, row.discount_paise) };

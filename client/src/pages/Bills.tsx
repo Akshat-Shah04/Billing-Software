@@ -20,6 +20,24 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+/** A bill's items as a short bullet list: name and financial year. Long bills show the first few and "+N more". */
+const SHOW_ITEMS = 4;
+function ItemBullets({ items }: { items: { description: string; fy_start: number }[] }) {
+  if (!items.length) return <span className="muted">–</span>;
+  const shown = items.slice(0, SHOW_ITEMS);
+  return (
+    <ul className="item-bullets">
+      {shown.map((i, n) => (
+        <li key={n}>
+          {i.description}
+          <span className="muted"> · {fyLabel(i.fy_start)}</span>
+        </li>
+      ))}
+      {items.length > SHOW_ITEMS && <li className="more muted">+{items.length - SHOW_ITEMS} more</li>}
+    </ul>
+  );
+}
+
 export default function Bills() {
   const navigate = useNavigate();
   // Filters live in the address, so Back returns to the same list and a filtered list can be bookmarked.
@@ -164,6 +182,7 @@ export default function Bills() {
               <tr>
                 <th>Bill</th>
                 <th>Client</th>
+                <th>Items</th>
                 <th>Status</th>
                 <th className="num">Total</th>
                 <th className="num">Balance</th>
@@ -186,6 +205,9 @@ export default function Bills() {
                     {b.client_name} {b.client_deleted && <span className="badge plain">deleted client</span>}
                     <div className="muted tiny">{[b.client_phone, b.client_city].filter(Boolean).join(" · ")}</div>
                   </td>
+                  <td className="c-items">
+                    <ItemBullets items={b.items} />
+                  </td>
                   <td className="c-status nowrap">
                     <StatusBadge bill={b} />
                     {b.due_date && b.state === "open" && <div className="muted tiny">Due {formatDate(b.due_date)}</div>}
@@ -203,7 +225,7 @@ export default function Bills() {
               ))}
               {data && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="empty-cell">
+                  <td colSpan={6} className="empty-cell">
                     {loading ? (
                       "Loading…"
                     ) : filtered ? (
