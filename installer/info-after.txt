@@ -1,0 +1,85 @@
+BILLING SOFTWARE - YOU ARE ALMOST DONE
+======================================
+
+Billing Software is installed and running as a Windows service.
+The next page shows the exact web address for this computer and for the other
+computers in your office.
+
+
+FIRST STEPS
+-----------
+ 1. Click "Open Billing Software now" on the last page (or use the Start Menu shortcut).
+ 2. Log in with the administrator username and password you created in this wizard.
+ 3. Open "Settings" and enter your firm name, address and GSTIN, and upload your logo.
+    Also fill in your PAYMENT DETAILS (bank account, IFSC, UPI ID) so your clients know where to pay.
+    All of these appear on every bill. There is also a switch to turn GST on or off, and the GST rate.
+ 4. Open "Staff" and create an account for each person who will use the software.
+    Give each person their own login. Staff accounts can create and edit bills,
+    clients and services. Only administrators can manage staff and settings.
+ 5. Open "Services" and add the services you charge for, with their usual prices.
+ 6. Open "Clients" and add your clients, then "Bills" to create your first bill.
+
+
+TELLING YOUR STAFF HOW TO CONNECT
+---------------------------------
+On any other computer in the office, open a web browser and type the "other computers"
+address shown on the next page, for example   http://OFFICE-PC:4000
+Tip: add that address to the browser's bookmarks.
+
+If another computer cannot connect:
+ * Check that it is on the same network (same Wi-Fi or same cable network).
+ * Check that this computer is switched on and not asleep.
+ * Try the computer's IP address instead of its name. Open Command Prompt on this
+   computer, type  ipconfig  and look for "IPv4 Address", then use
+   http://THAT-ADDRESS:4000
+ * If this computer's network is set to "Public", Windows blocks connections.
+   Set it to "Private" in Windows Settings > Network & Internet.
+
+
+WHERE EVERYTHING IS
+-------------------
+ Program files    C:\Program Files\Billing Software   (do not edit)
+ Your data        C:\ProgramData\BillingSoftware
+    database      ...\db
+    backups       ...\backups      (daily, last 14 kept)
+    log files     ...\logs         (look here first if something goes wrong)
+ Client folders   the folder you chose in this wizard (default:
+                  C:\Users\Public\Documents\Billing Software Client Files)
+                  One folder per client with their details and a printable copy of every bill.
+                  In the software, Settings > "Client folders" shows the location and has a
+                  "Rebuild all client folders now" button if you ever need to recreate them.
+
+Please copy the backups folder to a USB drive or cloud drive regularly. A backup that
+lives only on this computer does not help if this computer breaks.
+
+
+RESTORING A BACKUP
+------------------
+Open the Start Menu, right-click "Command Prompt" and choose "Run as administrator", then run:
+
+   "C:\Program Files\Billing Software\tools\restore.cmd" "C:\ProgramData\BillingSoftware\backups\billing-YYYYMMDD-HHMMSS.tar.gz"
+
+Use the real file name of the backup you want. The tool stops the service, sets your
+current database aside (it is not deleted), restores the backup and starts the service again.
+Anything entered after the backup was made will not be in the restored copy.
+
+
+STARTING AND STOPPING THE SERVICE
+---------------------------------
+It starts by itself with Windows. To stop or start it by hand, open "Services" in Windows
+(press the Windows key and type Services), find "Billing Software", right-click it and choose
+Stop, Start or Restart.
+
+
+CHANGING THE PORT LATER
+-----------------------
+Run this installer again. It remembers your data and asks for the port again.
+
+
+UNINSTALLING
+------------
+Windows Settings > Apps > Billing Software > Uninstall. You will be asked whether to
+delete your data too. Choose No if you may want it again.
+
+
+Thank you for using Billing Software.
