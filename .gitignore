@@ -1,0 +1,9 @@
+node_modules/
+.env
+dist/
+.data/
+*.log
+installer/staging/
+installer/output/
+installer/.cache/
+client-files/

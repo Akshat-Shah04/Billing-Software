@@ -1,0 +1,469 @@
+/* ============================================================
+   Design tokens
+   Light is the default. Dark follows the system unless the user
+   picks a theme in the top bar (html[data-theme="light|dark"]).
+   ============================================================ */
+:root,
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;          /* hover rows, track behind toggles */
+  --input-bg: #ffffff;
+  --text: #14181f;
+  --muted: #5b6474;
+  --link: #2252cf;
+  --primary: #2457d6;
+  --primary-dark: #1b45ad;
+  --primary-soft: #e8eefc;
+  --focus-ring: rgba(36, 87, 214, 0.24);
+  --danger: #c0301f;
+  --danger-soft: #fdecea;
+  --ok: #167347;
+  --ok-soft: #e3f4eb;
+  --warn-soft: #fff1dc;
+  --warn: #8a5300;
+  /* Semi-transparent edges look cleaner than solid borders on any background. */
+  --ring: rgba(16, 24, 40, 0.08);
+  --ring-strong: rgba(16, 24, 40, 0.16);
+  --line: rgba(16, 24, 40, 0.08);
+  --shadow: 0 0 0 1px var(--ring), 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.12);
+  --shadow-sm: 0 0 0 1px var(--ring), 0 1px 2px rgba(16, 24, 40, 0.06);
+  --radius: 12px;
+  --radius-sm: 8px;
+  /* Strong ease-out: UI responds instantly, then settles. (The built-in CSS curves are too weak.) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b0d12;
+  --surface: #14171e;
+  --surface-2: #1c2029;
+  --input-bg: #0f1218;
+  --text: #e8ebf1;
+  --muted: #98a1b2;
+  --link: #8eaaff;
+  --primary: #3d6bf0;
+  --primary-dark: #2f58d4;
+  --primary-soft: rgba(110, 145, 255, 0.16);
+  --focus-ring: rgba(110, 145, 255, 0.34);
+  --danger: #ff8173;
+  --danger-soft: rgba(255, 110, 92, 0.14);
+  --ok: #52c98f;
+  --ok-soft: rgba(82, 201, 143, 0.14);
+  --warn-soft: rgba(255, 184, 77, 0.14);
+  --warn: #ffbf66;
+  --ring: rgba(255, 255, 255, 0.09);
+  --ring-strong: rgba(255, 255, 255, 0.18);
+  --line: rgba(255, 255, 255, 0.08);
+  --shadow: 0 0 0 1px var(--ring), 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 0 0 1px var(--ring), 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #0b0d12;
+    --surface: #14171e;
+    --surface-2: #1c2029;
+    --input-bg: #0f1218;
+    --text: #e8ebf1;
+    --muted: #98a1b2;
+    --link: #8eaaff;
+    --primary: #3d6bf0;
+    --primary-dark: #2f58d4;
+    --primary-soft: rgba(110, 145, 255, 0.16);
+    --focus-ring: rgba(110, 145, 255, 0.34);
+    --danger: #ff8173;
+    --danger-soft: rgba(255, 110, 92, 0.14);
+    --ok: #52c98f;
+    --ok-soft: rgba(82, 201, 143, 0.14);
+    --warn-soft: rgba(255, 184, 77, 0.14);
+    --warn: #ffbf66;
+    --ring: rgba(255, 255, 255, 0.09);
+    --ring-strong: rgba(255, 255, 255, 0.18);
+    --line: rgba(255, 255, 255, 0.08);
+    --shadow: 0 0 0 1px var(--ring), 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    --shadow-sm: 0 0 0 1px var(--ring), 0 1px 2px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+
+/* A bill is a document: it stays a white sheet of paper in dark mode, exactly as it prints,
+   so logos with dark text on a transparent background are always readable. */
+.paper {
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --text: #14181f;
+  --muted: #5b6474;
+  --link: #2252cf;
+  --ring: rgba(16, 24, 40, 0.08);
+  --ring-strong: rgba(16, 24, 40, 0.16);
+  --line: rgba(16, 24, 40, 0.1);
+  --shadow: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06), 0 16px 40px -20px rgba(0, 0, 0, 0.45);
+  color-scheme: light;
+  background: #ffffff;
+  color: #14181f;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+* { box-sizing: border-box; }
+
+html {
+  -webkit-tap-highlight-color: transparent; /* we give our own press feedback instead */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100dvh;
+}
+
+h1, h2, h3 { text-wrap: balance; }
+h1 { font-size: 1.65rem; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 1rem; }
+h2 { font-size: 1.05rem; line-height: 1.3; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 0.75rem; }
+p { max-width: 65ch; }
+a { color: var(--link); text-decoration: none; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+::selection { background: var(--primary-soft); }
+
+/* Hover styles only where a mouse can hover, so a tap on a phone never leaves one stuck. */
+@media (hover: hover) and (pointer: fine) {
+  a:hover { text-decoration: underline; }
+}
+
+/* ============================================================
+   Layout
+   ============================================================ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  padding: calc(0.55rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right)) 0.55rem calc(1rem + env(safe-area-inset-left));
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  -webkit-backdrop-filter: saturate(1.5) blur(14px);
+  backdrop-filter: saturate(1.5) blur(14px);
+  box-shadow: 0 1px 0 var(--ring);
+}
+.brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 700; letter-spacing: -0.01em; color: var(--text); white-space: nowrap; }
+.brand:hover { text-decoration: none; }
+.nav { display: flex; gap: 0.15rem; flex: 1; min-width: 0; }
+.nav a {
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.nav a.active { background: var(--primary-soft); color: var(--link); font-weight: 600; }
+@media (hover: hover) and (pointer: fine) {
+  .nav a:hover { text-decoration: none; background: var(--surface-2); color: var(--text); }
+  .nav a.active:hover { background: var(--primary-soft); color: var(--link); }
+}
+.user-box { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); min-width: 0; }
+.user-name { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 1.5rem calc(1rem + env(safe-area-inset-right)) calc(3rem + env(safe-area-inset-bottom)) calc(1rem + env(safe-area-inset-left));
+}
+
+/* On a phone the menu gets its own scrollable line instead of wrapping into a messy block. */
+@media (max-width: 720px) {
+  .nav { order: 3; flex-basis: 100%; overflow-x: auto; scrollbar-width: none; margin: 0 -0.25rem; padding: 0 0.25rem; }
+  .nav::-webkit-scrollbar { display: none; }
+  .brand { flex: 1; }
+  main { padding-top: 1rem; }
+}
+@media (max-width: 520px) {
+  .user-name, .user-box .badge { display: none; }
+}
+
+/* ============================================================
+   Pieces
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+@media (max-width: 640px) { .card { padding: 1rem; } }
+
+.row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+.row.between { justify-content: space-between; margin-bottom: 1rem; }
+.row.between > h1 { margin-bottom: 0; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.right { text-align: right; }
+.nowrap { white-space: nowrap; }
+
+/* Buttons: pressing scales down slightly, so the interface feels like it heard you. */
+button, .btn {
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.25;
+  min-height: 36px;
+  padding: 0.45rem 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 160ms var(--ease-out), background-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+}
+button:active:not(:disabled), .btn:active { transform: scale(0.97); }
+button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: var(--shadow-sm); }
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled), .btn:hover { background: var(--surface-2); text-decoration: none; }
+}
+
+button.primary, .btn.primary {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(16, 24, 40, 0.25);
+}
+@media (hover: hover) and (pointer: fine) {
+  button.primary:hover:not(:disabled), .btn.primary:hover { background: var(--primary-dark); }
+}
+button.danger { color: var(--danger); }
+@media (hover: hover) and (pointer: fine) {
+  button.danger:hover:not(:disabled) { background: var(--danger-soft); }
+}
+button.link {
+  min-height: 0;
+  padding: 0.15rem 0.35rem;
+  background: none;
+  box-shadow: none;
+  color: var(--link);
+  font-weight: 500;
+}
+button.link.danger { color: var(--danger); }
+@media (hover: hover) and (pointer: fine) {
+  button.link:hover:not(:disabled) { background: var(--surface-2); text-decoration: none; }
+  button.link.danger:hover:not(:disabled) { background: var(--danger-soft); }
+}
+button.link:disabled { box-shadow: none; }
+
+label { display: block; font-size: 0.82rem; font-weight: 500; color: var(--muted); margin-bottom: 0.25rem; }
+input, select, textarea {
+  font: inherit;
+  width: 100%;
+  min-height: 38px;
+  padding: 0.5rem 0.7rem;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--ring-strong);
+  transition: box-shadow 150ms ease;
+}
+textarea { resize: vertical; line-height: 1.45; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.92; }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--primary), 0 0 0 4px var(--focus-ring);
+}
+input[type="checkbox"] { width: 1.05rem; height: 1.05rem; min-height: 0; accent-color: var(--primary); box-shadow: none; }
+.check { display: flex; align-items: center; gap: 0.55rem; color: var(--text); font-size: 1rem; font-weight: 400; margin: 0; cursor: pointer; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 0.85rem; }
+.field { min-width: 0; }
+
+/* On a phone, an input under 16px makes the page zoom in when it gets focus. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+  button, .btn { min-height: 44px; }
+  button.link { min-height: 36px; padding: 0.4rem 0.6rem; }
+}
+
+.error, .notice {
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.85rem;
+  overflow-wrap: anywhere;
+  /* Appears with a short fade and slide, from where it will sit. */
+  transition: opacity 200ms ease-out, transform 200ms var(--ease-out);
+  @starting-style { opacity: 0; transform: translateY(-4px); }
+}
+.error { background: var(--danger-soft); color: var(--danger); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 28%, transparent); }
+.notice { background: var(--ok-soft); color: var(--ok); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 28%, transparent); }
+
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 0 0.5rem;
+  border-radius: 99px;
+  background: var(--surface-2);
+  color: var(--muted);
+  white-space: nowrap;      /* a badge never wraps onto two lines */
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.badge.warn { background: var(--danger-soft); color: var(--danger); }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+
+/* ============================================================
+   Tables
+   ============================================================ */
+.table-wrap { overflow-x: auto; margin: 0 -0.25rem; padding: 0 0.25rem; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+th {
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom-color: var(--ring-strong);
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; }
+/* Amounts, dates and bill numbers are never truncated or broken: they get the room they need. */
+td.num, td.nowrap, .nowrap { white-space: nowrap; overflow-wrap: normal; }
+/* Each bill item is two rows: the name/price line, then its description box underneath. */
+tr.item-main td { border-bottom: 0; padding-bottom: 0.2rem; }
+tr.item-desc td { padding-top: 0; padding-bottom: 0.9rem; }
+tr.item-desc label { color: var(--muted); }
+tr.clickable { cursor: pointer; }
+tr.clickable:active { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) {
+  tr.clickable:hover { background: var(--surface-2); }
+}
+.bill-id { font-weight: 700; font-size: 1.02rem; letter-spacing: -0.005em; }
+.bill-date { font-weight: 600; }
+tr.dim td { color: var(--muted); }
+.empty-cell { text-align: center; color: var(--muted); padding: 2.5rem 1rem; }
+
+.pager { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: flex-end; margin-top: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   Screens
+   ============================================================ */
+.login-wrap {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(1rem + env(safe-area-inset-bottom));
+  background: radial-gradient(60rem 28rem at 50% -8rem, var(--primary-soft), transparent 70%);
+}
+.login-card { width: min(100%, 380px); }
+.login-card h1 { margin-bottom: 0.25rem; }
+.login-brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.25rem; }
+.corner-toggle { position: fixed; top: calc(0.75rem + env(safe-area-inset-top)); right: calc(0.75rem + env(safe-area-inset-right)); }
+
+.totals { margin-left: auto; width: min(340px, 100%); font-variant-numeric: tabular-nums; }
+.totals div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.22rem 0; }
+.totals .grand { border-top: 2px solid var(--text); margin-top: 0.35rem; padding-top: 0.5rem; font-weight: 700; font-size: 1.15rem; }
+
+.picker { border-radius: var(--radius-sm); margin-top: 0.35rem; max-height: 220px; overflow-y: auto; background: var(--input-bg); box-shadow: 0 0 0 1px var(--ring-strong); overscroll-behavior: contain; }
+.picker button { display: block; width: 100%; text-align: left; border-radius: 0; box-shadow: none; background: transparent; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.picker button:last-child { border-bottom: 0; }
+
+/* On a bill: the item title is clearly larger and bolder than its description underneath. */
+.item-title { font-size: 1.1rem; font-weight: 700; line-height: 1.3; letter-spacing: -0.005em; }
+.item-text { font-size: 0.8rem; font-weight: 400; color: var(--muted); line-height: 1.45; margin-top: 0.2rem; white-space: pre-line; max-width: 65ch; }
+
+.org-logo { display: block; max-height: 80px; max-width: 260px; margin-bottom: 0.5rem; }
+/* The logo sits on white in the preview too, because it is meant for a white bill. */
+.logo-preview { max-height: 90px; max-width: min(100%, 280px); border-radius: var(--radius-sm); padding: 0.5rem; background: #fff; box-shadow: 0 0 0 1px var(--ring-strong); }
+.pay-box { margin-top: 1.25rem; border-radius: var(--radius-sm); padding: 0.85rem 1rem; box-shadow: 0 0 0 1px var(--ring-strong); background: var(--surface-2); break-inside: avoid; overflow-wrap: anywhere; }
+.pay-table { width: auto; margin: 0.25rem 0 0.5rem; }
+.pay-table td { border: 0; padding: 0.12rem 1rem 0.12rem 0; background: transparent; }
+.invoice-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.invoice-head > div { min-width: 0; overflow-wrap: anywhere; }
+/* The firm takes the free space; the bill number stays on the right even when a long firm name pushes it to its own line. */
+.invoice-head > div:first-child { flex: 1 1 22rem; }
+.invoice-head > div:last-child { margin-left: auto; text-align: right; }
+.invoice-head h1 { margin-bottom: 0.25rem; }
+
+/* ----- Phones: lists and the item rows become cards instead of sideways-scrolling tables ----- */
+@media (max-width: 600px) {
+  /* Bills list: bill number and total on the first line, client and date on the second. */
+  .table-bills thead { display: none; }
+  .table-bills, .table-bills tbody { display: block; }
+  .table-bills tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 0.75rem; row-gap: 0.1rem; padding: 0.8rem 0; border-bottom: 1px solid var(--line); }
+  .table-bills tr:last-child { border-bottom: 0; }
+  .table-bills td { display: block; border: 0; padding: 0; }
+  .table-bills td:nth-child(2) { grid-column: 1; grid-row: 1; }
+  .table-bills td:nth-child(4) { grid-column: 2; grid-row: 1; text-align: right; font-weight: 650; }
+  .table-bills td:nth-child(3) { grid-column: 1; grid-row: 2; }
+  .table-bills td:nth-child(1) { grid-column: 2; grid-row: 2; text-align: right; }
+  .table-bills td.empty-cell { grid-column: 1 / -1; grid-row: auto; text-align: center; padding: 2rem 1rem; }
+
+  /* Bill form: each item is a small stacked form with a visible label on every field. */
+  .items-table thead { display: none; }
+  .items-table, .items-table tbody { display: block; }
+  .items-table tr.item-main { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  .items-table tbody > tr.item-main:first-child { border-top: 0; padding-top: 0; }
+  .items-table td { display: block; border: 0; padding: 0; }
+  .items-table td[data-label]::before { content: attr(data-label); display: block; font-size: 0.75rem; font-weight: 500; color: var(--muted); margin-bottom: 0.2rem; }
+  .items-table td:nth-child(1), .items-table td:nth-child(2) { grid-column: 1 / -1; }
+  .items-table td:nth-child(5) { align-self: end; text-align: left; padding-bottom: 0.5rem; font-weight: 650; }
+  .items-table td:nth-child(6) { grid-column: 2; align-self: end; text-align: right; }
+  .items-table tr.item-desc { display: block; }
+  .items-table tr.item-desc td { padding: 0.6rem 0 0.4rem; }
+}
+
+/* ----- Theme switch (System / Light / Dark) ----- */
+.theme-toggle { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--ring); }
+.theme-toggle button {
+  min-height: 0; width: 30px; height: 28px; padding: 0;
+  background: transparent; box-shadow: none; color: var(--muted); border-radius: 7px;
+}
+.theme-toggle button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+@media (hover: hover) and (pointer: fine) {
+  .theme-toggle button:hover:not(:disabled) { background: transparent; color: var(--text); }
+  .theme-toggle button[aria-pressed="true"]:hover:not(:disabled) { background: var(--surface); }
+}
+.theme-toggle svg { width: 16px; height: 16px; display: block; }
+@media (pointer: coarse) { .theme-toggle button { width: 36px; height: 34px; min-height: 0; } }
+
+/* ============================================================
+   Print
+   A zero page margin leaves the browser no room for its own header and footer
+   (date/time, page title, web address, page numbers), so none of that is printed on a bill.
+   The bill gets its margin from the padding below instead.
+   ============================================================ */
+@page { margin: 0; }
+
+@media print {
+  html, body { background: #fff !important; color: #14181f; }
+  .topbar, .no-print { display: none !important; }
+  main { max-width: none; padding: 14mm 16mm; }
+  .card { box-shadow: none; background: transparent; border-radius: 0; padding: 0; }
+  .pay-box { background: transparent; }
+}
+
+/* Reduced motion: keep the fades (they help comprehension), drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  button:active:not(:disabled), .btn:active { transform: none; }
+  .error, .notice { @starting-style { transform: none; } }
+}

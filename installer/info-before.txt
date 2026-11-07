@@ -1,0 +1,118 @@
+BILLING SOFTWARE - BEFORE YOU INSTALL
+=====================================
+
+Please read this page. It explains exactly what this installer will do to your computer.
+
+
+WHAT IS BILLING SOFTWARE?
+-------------------------
+A billing system for an accountancy firm. It manages clients, services and bills,
+with staff logins, optional GST, bill search and printing.
+
+It runs as a small web server on THIS computer. Everyone in the office opens it in a
+normal web browser (Chrome, Edge, Firefox). Nothing needs to be installed on the other
+computers.
+
+
+WHAT YOU NEED
+-------------
+ * Windows 10 or Windows 11, 64-bit
+ * Administrator rights on this computer (the installer asks for permission)
+ * About 500 MB of free disk space (the database grows as you add bills)
+ * Nothing else. The installer includes everything the software needs
+   (a private copy of Node.js and the database). You do not need to install
+   PostgreSQL, Node.js or anything else first.
+ * An office network (Wi-Fi or cable) if other computers will use it.
+   Without a network it still works on this computer alone.
+
+Tip: install it on a computer that is switched on during working hours and that is
+not shut down or put to sleep, because everyone else connects to it.
+
+
+WHAT THE INSTALLER WILL DO (in this order)
+------------------------------------------
+ 1. Copy the program files into the folder you choose (default: C:\Program Files\Billing Software).
+ 2. Ask you for a network port (default 4000).
+ 3. Ask where to keep the CLIENT FOLDERS (see "Client folders" below).
+ 4. Ask you to create the first ADMINISTRATOR account (name, username, password).
+ 5. Create a data folder:  C:\ProgramData\BillingSoftware
+    This holds your database, your daily backups and the log files.
+    It is kept separate from the program so that upgrading or reinstalling
+    never touches your data.
+ 6. Install "Billing Software" as a Windows SERVICE that starts automatically when
+    Windows starts. Nobody has to log in or open anything for it to run.
+ 7. Create the administrator account in the new database.
+ 8. Add a Windows Firewall rule named "Billing Software" that lets other computers on
+    your PRIVATE or DOMAIN network (not public Wi-Fi) reach the chosen port.
+ 9. Create a Start Menu shortcut (and optionally a Desktop shortcut) that opens the
+    software in your browser.
+
+The installer does NOT change any other Windows settings, does not install drivers,
+and does not send any information over the internet.
+
+
+HOW OTHER COMPUTERS CONNECT
+---------------------------
+After installation, staff type this address into their browser:
+
+        http://THIS-COMPUTER-NAME:4000
+
+(The finish page of this installer shows the exact address for your computer.
+Use the port you choose later in this wizard.) Staff then log in with the account
+that the administrator creates for them under Staff in the software.
+
+
+CLIENT FOLDERS
+--------------
+Billing Software also keeps a normal Windows folder for every client, named after the client.
+Each folder contains:
+   client-details.txt   the client's details and a list of their bills
+   client-data.json     the same information in full, for other programs
+   bills\               a printable copy of every bill (open it in any web browser)
+
+The folders are updated automatically whenever a client or a bill is added or changed.
+If two clients have the same name, the second folder gets the client number added to its name.
+If a client is renamed, their folder is renamed to match. If a client is deleted in the
+software, the folder stays, and its details file says DELETED.
+
+You choose where these folders are kept later in this wizard (the default is
+C:\Users\Public\Documents\Billing Software Client Files, which every user of this computer can open).
+Billing Software and the uninstaller never delete these folders. Please do not edit the files
+inside them, because they are rewritten whenever something changes.
+
+
+YOUR DATA AND BACKUPS
+---------------------
+ * Everything is stored on this computer in C:\ProgramData\BillingSoftware.
+ * A backup of the whole database is made automatically when the service starts
+   and then every 24 hours. The 14 most recent backups are kept in
+        C:\ProgramData\BillingSoftware\backups
+ * Backups on the same computer do not protect you if the computer fails.
+   Please copy that backups folder to a USB drive or a cloud drive regularly.
+
+
+SECURITY NOTES
+--------------
+ * The software is meant for your office network only. Do NOT expose the port to the
+   internet (for example by port-forwarding on your router).
+ * Connections inside the office are not encrypted (plain HTTP). That is normal for a
+   private office network.
+ * Choose a strong administrator password and do not share it. Create a separate
+   account for each staff member.
+ * Windows may warn that the installer comes from an "unknown publisher".
+   This is because the installer is not digitally signed. Only continue if you
+   downloaded it from the official GitHub page of this project.
+
+
+UPGRADING
+---------
+Run the newer installer on the same computer. It detects the existing installation,
+stops the service, replaces the program files, keeps your data and settings, and starts
+the service again. You will not be asked to create the administrator account again.
+
+
+UNINSTALLING
+------------
+Use "Apps" in Windows Settings (or the Uninstall shortcut in the Start Menu).
+The uninstaller asks whether you also want to delete your data. The default answer is
+NO, so your database and backups stay on the computer unless you choose otherwise.
