@@ -413,7 +413,7 @@ describe("bills", () => {
     const a = await api.post("/api/bills").set(auth(staff)).send({ client_id: c.id, items: oneItem(123_456) });
     expect(a.status).toBe(201);
     expect(a.body).toMatchObject({ subtotal_paise: 123_456, gst_paise: 0, total_paise: 123_456, gst_rate_percent: 0 });
-    expect(a.body.bill_no).toMatch(/^INV-\d{6}$/);
+    expect(a.body.bill_no).toMatch(/^\d{4}-\d{2}\/\d{4}$/); // e.g. 2026-27/0005
     expect(a.body.created_by_name).toBe("Asha Staff");
     const b = await api.post("/api/bills").set(auth(staff)).send({ client_id: c.id, items: oneItem() });
     expect(b.body.bill_no).not.toBe(a.body.bill_no);

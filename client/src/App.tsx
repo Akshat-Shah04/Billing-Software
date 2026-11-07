@@ -12,7 +12,7 @@ import Staff from "./pages/Staff";
 
 export default function App() {
   const { user, loading } = useAuth();
-  if (loading) return <p style={{ padding: "2rem" }}>Loading…</p>;
+  if (loading) return <p className="muted" style={{ padding: "2rem" }}>Loading…</p>;
   if (!user) return <Login />;
 
   const isAdmin = user.role === "admin";

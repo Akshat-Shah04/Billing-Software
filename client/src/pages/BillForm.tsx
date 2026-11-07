@@ -1,8 +1,11 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, qs } from "../api";
+import Icon from "../components/Icon";
+import Message from "../components/Message";
+import PageHeader from "../components/PageHeader";
 import { useDebounced } from "../hooks";
-import { calculateTotals, formatRupees, fyLabel, fyStartOf, paiseToInput, rupeesToPaise, todayISO } from "../money";
+import { calculateTotals, formatDate, formatRupees, fyLabel, fyStartOf, paiseToInput, rupeesToPaise, todayISO } from "../money";
 import type { Bill, Client, Page, Service, Settings } from "../types";
 
 interface Row {
@@ -15,6 +18,15 @@ interface Row {
 }
 
 let nextKey = 1;
+
+/** The oldest financial year offered in the dropdown (2000 = FY 2000-01), for entering old bills. */
+const FIRST_FY = 2000;
+
+/** "2026-11-05" + 15 days -> "2026-11-20" (calendar maths in UTC, so daylight saving never shifts a day). */
+function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
 const blankRow = (): Row => ({ key: nextKey++, service_id: null, description: "", details: "", quantity: "1", price: "" });
 
 export default function BillForm() {
@@ -30,6 +42,15 @@ export default function BillForm() {
   const [clientSearch, setClientSearch] = useState("");
   const [clientResults, setClientResults] = useState<Client[]>([]);
   const [date, setDate] = useState(todayISO());
+  // The financial year the bill belongs to. Chosen separately: it is NOT worked out from the bill date
+  // (a bill made today can be for an earlier year's work, and old bills can be entered later).
+  const currentFy = fyStartOf(todayISO())!;
+  const [fyStart, setFyStart] = useState(currentFy);
+  const [dueDate, setDueDate] = useState("");
+  // New bills: the due date follows the bill date (date + payment terms) until the user picks one themselves.
+  const [dueTouched, setDueTouched] = useState(false);
+  const [termsDays, setTermsDays] = useState(15);
+  const [locked, setLocked] = useState(false);
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<Row[]>([blankRow()]);
   const [rate, setRate] = useState(0);
@@ -52,6 +73,10 @@ export default function BillForm() {
           setClientName(bill.client_name);
           setPicking(false);
           setDate(bill.bill_date);
+          setFyStart(bill.fy_start);
+          setDueDate(bill.due_date ?? "");
+          setDueTouched(true);
+          setLocked(bill.amounts_locked);
           setNotes(bill.notes ?? "");
           setRate(bill.gst_rate_percent); // an existing bill keeps its own rate
           setBillNo(bill.bill_no);
@@ -67,7 +92,10 @@ export default function BillForm() {
           );
         } else {
           const s = await api<Settings>("/settings");
-          if (current) setRate(s.gst_enabled ? s.gst_rate_percent : 0);
+          if (current) {
+            setRate(s.gst_enabled ? s.gst_rate_percent : 0);
+            setTermsDays(s.payment_terms_days);
+          }
         }
         setReady(true);
       } catch (e) {
@@ -106,7 +134,11 @@ export default function BillForm() {
     [parsed, rate],
   );
 
-  const fy = fyStartOf(date);
+  // Years to choose from: next year (advance billing), this year, and every year back to FIRST_FY, newest first.
+  const fyOptions = Array.from({ length: currentFy + 2 - FIRST_FY }, (_, i) => currentFy + 1 - i);
+  if (!fyOptions.includes(fyStart)) fyOptions.push(fyStart);
+  const autoDue = /^\d{4}-\d{2}-\d{2}$/.test(date) ? addDays(date, termsDays) : "";
+  const effectiveDue = dueTouched ? dueDate : autoDue;
   const updateRow = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   function chooseService(key: number, value: string) {
@@ -125,6 +157,8 @@ export default function BillForm() {
     const body = {
       client_id: clientId,
       bill_date: date || null,
+      fy_start: fyStart,
+      due_date: effectiveDue || null,
       notes,
       items: rows.map((r, i) => ({
         service_id: r.service_id,
@@ -146,28 +180,68 @@ export default function BillForm() {
     }
   }
 
-  if (!ready) return error ? <div className="error">{error}</div> : <p>Loading…</p>;
+  if (!ready) return error ? <Message kind="error">{error}</Message> : <p className="muted">Loading…</p>;
 
   return (
     <form onSubmit={submit}>
-      <h1>{editId ? `Edit bill ${billNo}` : "Create bill"}</h1>
-      {error && <div className="error">{error}</div>}
+      <Link to={editId ? `/bills/${editId}` : "/bills"} className="back">
+        <Icon name="chevronLeft" />
+        {editId ? `Bill ${billNo}` : "Bills"}
+      </Link>
+      <PageHeader title={editId ? `Edit bill ${billNo}` : "New bill"} subtitle={`Financial year ${fyLabel(fyStart)}`}>
+        <Link to={editId ? `/bills/${editId}` : "/bills"} className="btn">
+          Cancel
+        </Link>
+        <button className="primary" disabled={saving}>
+          {saving ? "Saving…" : editId ? "Save changes" : "Create bill"}
+        </button>
+      </PageHeader>
+      {error && <Message kind="error">{error}</Message>}
+      {locked && (
+        <Message kind="info">
+          This bill has payments or credit notes, so its client, date and items are fixed. You can still change the due
+          date and notes. To reduce the amount, issue a credit note from the bill page.
+        </Message>
+      )}
 
       <div className="card">
         <div className="grid">
-          <div className="field">
-            <label>Client *</label>
+          <div className="field" style={{ gridColumn: "1 / -1", maxWidth: 440 }}>
+            <label htmlFor="bill-fy">Financial year of this bill</label>
+            <select id="bill-fy" disabled={editId !== null} value={fyStart} onChange={(e) => setFyStart(Number(e.target.value))}>
+              {fyOptions
+                .sort((a, b) => b - a)
+                .map((y) => (
+                  <option key={y} value={y}>
+                    {y}-{y + 1}
+                    {y === currentFy ? " (current year)" : y === currentFy + 1 ? " (next year)" : ""}
+                  </option>
+                ))}
+            </select>
+            <div className="hint">
+              {editId
+                ? `This bill belongs to ${fyLabel(fyStart)} and its number is from that year's series, so the year can't be changed.`
+                : `Numbered in the ${fyLabel(fyStart)} series (like ${fyLabel(fyStart)}/0001) and listed under ${fyLabel(fyStart)}. The bill date below is separate.`}
+            </div>
+          </div>
+          <div className="field" style={{ gridColumn: "span 2" }}>
+            <label htmlFor="client-search">Client</label>
             {!picking && clientId ? (
-              <div className="row">
+              <div className="chosen">
                 <strong>{clientName}</strong>
-                <button type="button" className="link" onClick={() => setPicking(true)}>
-                  Change
-                </button>
+                {!locked && (
+                  <button type="button" className="link" onClick={() => setPicking(true)}>
+                    Change
+                  </button>
+                )}
               </div>
             ) : (
               <>
-                <input autoFocus placeholder="Search client by name or phone" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
-                <div className="picker">
+                <div className="search">
+                  <Icon name="search" />
+                  <input id="client-search" autoFocus placeholder="Search by name or phone" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
+                </div>
+                <div className="picker" aria-label="Matching clients">
                   {clientResults.map((c) => (
                     <button
                       type="button"
@@ -182,16 +256,34 @@ export default function BillForm() {
                       <span className="muted small"> {[c.phone, c.city].filter(Boolean).join(" · ")}</span>
                     </button>
                   ))}
-                  {clientResults.length === 0 && <div className="muted small" style={{ padding: ".5rem" }}>No clients found. <Link to="/clients">Add one first</Link>.</div>}
+                  {clientResults.length === 0 && (
+                    <div className="muted small" style={{ padding: ".6rem .75rem" }}>
+                      No clients found. <Link to="/clients">Add one first</Link>.
+                    </div>
+                  )}
                 </div>
               </>
             )}
           </div>
           <div className="field">
-            <label htmlFor="bill-date">
-              Bill date{fy !== null && <strong> · Financial year {fyLabel(fy)}</strong>}
-            </label>
-            <input id="bill-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <label htmlFor="bill-date">Bill date</label>
+            <input id="bill-date" type="date" disabled={locked} value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="due-date">Due date</label>
+            <input
+              id="due-date"
+              type="date"
+              min={date}
+              value={effectiveDue}
+              onChange={(e) => {
+                setDueTouched(true);
+                setDueDate(e.target.value);
+              }}
+            />
+            <div className="hint">
+              {!dueTouched && !editId ? `${termsDays} days after the bill date (your usual terms)` : effectiveDue ? `Due ${formatDate(effectiveDue)}` : "No due date"}
+            </div>
           </div>
         </div>
       </div>
@@ -202,7 +294,7 @@ export default function BillForm() {
           <table className="items-table">
             <thead>
               <tr>
-                <th style={{ minWidth: 150 }}>Service (optional)</th>
+                <th style={{ minWidth: 150 }}>Service</th>
                 <th style={{ minWidth: 200 }}>Item name</th>
                 <th style={{ width: 80 }}>Qty</th>
                 <th style={{ width: 130 }}>Price (₹)</th>
@@ -213,62 +305,67 @@ export default function BillForm() {
             <tbody>
               {rows.map((r, i) => (
                 <Fragment key={r.key}>
-                <tr className="item-main">
-                  <td data-label="Service (optional)">
-                    <select
-                      aria-label={`Service for item ${i + 1}`}
-                      value={services.some((s) => s.id === r.service_id) ? String(r.service_id) : ""}
-                      onChange={(e) => chooseService(r.key, e.target.value)}
-                    >
-                      <option value="">Custom item</option>
-                      {services.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td data-label="Item name">
-                    <input aria-label={`Item name for item ${i + 1}`} placeholder="e.g. GST Return Filing" maxLength={300} value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />
-                  </td>
-                  <td data-label="Qty">
-                    <input aria-label={`Quantity for item ${i + 1}`} inputMode="numeric" maxLength={6} value={r.quantity} onChange={(e) => updateRow(r.key, { quantity: e.target.value })} />
-                  </td>
-                  <td data-label="Price (₹)">
-                    <input aria-label={`Price for item ${i + 1}`} inputMode="decimal" maxLength={15} value={r.price} onChange={(e) => updateRow(r.key, { price: e.target.value })} />
-                  </td>
-                  <td className="num nowrap" data-label="Amount">{parsed[i].valid ? formatRupees(parsed[i].quantity * (parsed[i].unit_price_paise ?? 0)) : "–"}</td>
-                  <td>
-                    <button type="button" className="link danger" disabled={rows.length === 1} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-                <tr className="item-desc">
-                  <td colSpan={6}>
-                    <label htmlFor={`item-desc-${r.key}`}>
-                      Description for item {i + 1}
-                      <span className="muted small"> (printed under the item on the bill; filled in from the service, and you can edit it)</span>
-                    </label>
-                    <textarea
-                      id={`item-desc-${r.key}`}
-                      aria-label={`Description for item ${i + 1}`}
-                      rows={2}
-                      maxLength={500}
-                      placeholder="Describe the work for this item, e.g. what is included"
-                      value={r.details}
-                      onChange={(e) => updateRow(r.key, { details: e.target.value })}
-                    />
-                  </td>
-                </tr>
+                  <tr className="item-main">
+                    <td data-label="Service">
+                      <select
+                        aria-label={`Service for item ${i + 1}`}
+                        disabled={locked}
+                        value={services.some((s) => s.id === r.service_id) ? String(r.service_id) : ""}
+                        onChange={(e) => chooseService(r.key, e.target.value)}
+                      >
+                        <option value="">Custom item</option>
+                        {services.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td data-label="Item name">
+                      <input aria-label={`Item name for item ${i + 1}`} disabled={locked} placeholder="e.g. GST Return Filing" maxLength={300} value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />
+                    </td>
+                    <td data-label="Qty">
+                      <input aria-label={`Quantity for item ${i + 1}`} disabled={locked} inputMode="numeric" maxLength={6} value={r.quantity} onChange={(e) => updateRow(r.key, { quantity: e.target.value })} />
+                    </td>
+                    <td data-label="Price (₹)">
+                      <input aria-label={`Price for item ${i + 1}`} disabled={locked} inputMode="decimal" maxLength={15} value={r.price} onChange={(e) => updateRow(r.key, { price: e.target.value })} />
+                    </td>
+                    <td className="num nowrap" data-label="Amount">
+                      {parsed[i].valid ? formatRupees(parsed[i].quantity * (parsed[i].unit_price_paise ?? 0)) : "–"}
+                    </td>
+                    <td>
+                      {!locked && (
+                        <button type="button" className="link danger" disabled={rows.length === 1} onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  <tr className="item-desc">
+                    <td colSpan={6}>
+                      <label htmlFor={`item-desc-${r.key}`}>Description, printed under the item</label>
+                      <textarea
+                        id={`item-desc-${r.key}`}
+                        rows={2}
+                        maxLength={500}
+                        disabled={locked}
+                        placeholder="What is included. Filled in from the service; you can change it for this bill."
+                        value={r.details}
+                        onChange={(e) => updateRow(r.key, { details: e.target.value })}
+                      />
+                    </td>
+                  </tr>
                 </Fragment>
               ))}
             </tbody>
           </table>
         </div>
-        <button type="button" style={{ marginTop: ".75rem" }} onClick={() => setRows((rs) => [...rs, blankRow()])}>
-          + Add item
-        </button>
+        {!locked && (
+          <button type="button" style={{ marginTop: ".75rem" }} onClick={() => setRows((rs) => [...rs, blankRow()])}>
+            <Icon name="plus" />
+            Add item
+          </button>
+        )}
 
         <div className="totals" style={{ marginTop: "1rem" }}>
           <div>
@@ -290,18 +387,9 @@ export default function BillForm() {
 
       <div className="card">
         <div className="field">
-          <label htmlFor="notes">Notes</label>
+          <label htmlFor="notes">Notes, printed on the bill</label>
           <textarea id="notes" rows={2} maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
-      </div>
-
-      <div className="row">
-        <button className="primary" disabled={saving}>
-          {saving ? "Saving…" : editId ? "Save changes" : "Create bill"}
-        </button>
-        <Link to={editId ? `/bills/${editId}` : "/bills"} className="btn">
-          Cancel
-        </Link>
       </div>
     </form>
   );

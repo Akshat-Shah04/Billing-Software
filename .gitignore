@@ -7,3 +7,5 @@ installer/staging/
 installer/output/
 installer/.cache/
 client-files/
+backups/
+server/test-results.json

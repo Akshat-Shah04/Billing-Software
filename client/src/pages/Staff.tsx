@@ -1,6 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import Icon from "../components/Icon";
+import Message from "../components/Message";
+import PageHeader from "../components/PageHeader";
+import Sheet from "../components/Sheet";
 import { useLoad } from "../hooks";
 import type { User } from "../types";
 
@@ -9,82 +13,79 @@ const EMPTY = { username: "", full_name: "", password: "", role: "staff" as User
 export default function Staff() {
   const { user: me } = useAuth();
   const { data, error, reload } = useLoad(() => api<{ items: User[] }>("/users"), "users");
+  const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(EMPTY);
-  const [formError, setFormError] = useState("");
+  const [resetting, setResetting] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [sheetError, setSheetError] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [actionError, setActionError] = useState("");
 
-  async function create(e: FormEvent) {
-    e.preventDefault();
+  async function create() {
     setSaving(true);
-    setFormError("");
-    setMessage("");
+    setSheetError("");
     try {
       await api("/users", { method: "POST", body: form });
       setMessage(`Account "${form.username.trim().toLowerCase()}" created. Share the password with them privately.`);
-      setForm(EMPTY);
+      setCreating(false);
       reload();
     } catch (err) {
-      setFormError((err as Error).message);
+      setSheetError((err as Error).message);
     } finally {
       setSaving(false);
     }
   }
 
-  async function patch(u: User, body: object, done: string) {
+  async function patch(u: User, body: object, done: string): Promise<boolean> {
     setActionError("");
     setMessage("");
     try {
       await api(`/users/${u.id}`, { method: "PATCH", body });
       setMessage(done);
       reload();
+      return true;
     } catch (err) {
       setActionError((err as Error).message);
+      return false;
     }
   }
 
-  function resetPassword(u: User) {
-    const password = window.prompt(`New password for ${u.username} (at least 8 characters):`);
-    if (password) patch(u, { password }, `Password changed for ${u.username}.`);
+  async function resetPassword() {
+    if (!resetting) return;
+    setSaving(true);
+    setSheetError("");
+    try {
+      await api(`/users/${resetting.id}`, { method: "PATCH", body: { password: newPassword } });
+      setMessage(`Password changed for ${resetting.username}.`);
+      setResetting(null);
+    } catch (err) {
+      setSheetError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <>
-      <h1>Staff</h1>
-
-      <form className="card" onSubmit={create}>
-        <h2>Create account</h2>
-        {formError && <div className="error">{formError}</div>}
-        <div className="grid">
-          <div className="field">
-            <label htmlFor="u-name">Full name *</label>
-            <input id="u-name" maxLength={100} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="u-user">Username *</label>
-            <input id="u-user" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={30} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="u-pass">Password * (8+ characters)</label>
-            <input id="u-pass" type="password" autoComplete="new-password" maxLength={100} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="u-role">Role</label>
-            <select id="u-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as User["role"] })}>
-              <option value="staff">Staff</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-        </div>
-        <button className="primary" style={{ marginTop: "1rem" }} disabled={saving || !form.username || !form.full_name || form.password.length < 8}>
-          {saving ? "Creating…" : "Create account"}
+      <PageHeader title="Staff" subtitle="Accounts that can log in. Admins can also change settings and cancel bills.">
+        <button
+          className="primary"
+          onClick={() => {
+            setForm(EMPTY);
+            setSheetError("");
+            setCreating(true);
+          }}
+        >
+          <Icon name="plus" />
+          New account
         </button>
-      </form>
+      </PageHeader>
 
-      <div className="card">
-        {message && <div className="notice">{message}</div>}
-        {(error || actionError) && <div className="error">{error || actionError}</div>}
+      {message && <Message kind="notice">{message}</Message>}
+      {(error || actionError) && <Message kind="error">{error || actionError}</Message>}
+
+      <div className="card flush">
         <div className="table-wrap">
           <table>
             <thead>
@@ -99,17 +100,27 @@ export default function Staff() {
             <tbody>
               {data?.items.map((u) => (
                 <tr key={u.id} className={u.is_active ? "" : "dim"}>
-                  <td>{u.full_name}</td>
+                  <td>
+                    <strong style={{ fontWeight: 600 }}>{u.full_name}</strong>
+                    {u.id === me?.id && <span className="muted tiny"> (you)</span>}
+                  </td>
                   <td>{u.username}</td>
-                  <td>{u.role}</td>
-                  <td>{u.is_active ? <span className="badge ok">active</span> : <span className="badge warn">deactivated</span>}</td>
+                  <td style={{ textTransform: "capitalize" }}>{u.role}</td>
+                  <td>{u.is_active ? <span className="badge ok">Active</span> : <span className="badge neutral">Deactivated</span>}</td>
                   <td className="right nowrap">
-                    <button className="link" onClick={() => resetPassword(u)}>
+                    <button
+                      className="link"
+                      onClick={() => {
+                        setNewPassword("");
+                        setSheetError("");
+                        setResetting(u);
+                      }}
+                    >
                       Reset password
                     </button>
                     {u.id !== me?.id &&
                       (u.is_active ? (
-                        <button className="link danger" onClick={() => window.confirm(`Deactivate ${u.full_name}? They will be logged out and unable to log in.`) && patch(u, { is_active: false }, `${u.full_name} deactivated.`)}>
+                        <button className="link danger" onClick={() => window.confirm(`Deactivate ${u.full_name}?\n\nThey are logged out at once and can't log in until reactivated.`) && patch(u, { is_active: false }, `${u.full_name} deactivated.`)}>
                           Deactivate
                         </button>
                       ) : (
@@ -124,6 +135,60 @@ export default function Staff() {
           </table>
         </div>
       </div>
+
+      <Sheet
+        open={creating}
+        title="New account"
+        subtitle="Give the password to the person privately. They can't change it themselves, but you can reset it any time."
+        onClose={() => setCreating(false)}
+        onSubmit={create}
+        submitLabel="Create account"
+        busy={saving}
+        submitDisabled={!form.username || !form.full_name || form.password.length < 8}
+      >
+        {sheetError && <Message kind="error">{sheetError}</Message>}
+        <div className="grid two">
+          <div className="field">
+            <label htmlFor="u-name">Full name</label>
+            <input id="u-name" autoFocus maxLength={100} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="u-user">Username</label>
+            <input id="u-user" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={30} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <div className="hint">Lowercase letters, numbers, dot, dash or underscore.</div>
+          </div>
+          <div className="field">
+            <label htmlFor="u-pass">Password</label>
+            <input id="u-pass" type="password" autoComplete="new-password" maxLength={100} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <div className="hint">{form.password.length > 0 && form.password.length < 8 ? `${8 - form.password.length} more characters needed` : "At least 8 characters."}</div>
+          </div>
+          <div className="field">
+            <label htmlFor="u-role">Role</label>
+            <select id="u-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as User["role"] })}>
+              <option value="staff">Staff</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={resetting !== null}
+        title={`Reset password for ${resetting?.full_name ?? ""}`}
+        subtitle="They will need the new password the next time they log in."
+        onClose={() => setResetting(null)}
+        onSubmit={resetPassword}
+        submitLabel="Change password"
+        busy={saving}
+        submitDisabled={newPassword.length < 8}
+      >
+        {sheetError && <Message kind="error">{sheetError}</Message>}
+        <div className="field">
+          <label htmlFor="u-newpass">New password</label>
+          <input id="u-newpass" type="password" autoFocus autoComplete="new-password" maxLength={100} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <div className="hint">At least 8 characters.</div>
+        </div>
+      </Sheet>
     </>
   );
 }

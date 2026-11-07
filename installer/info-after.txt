@@ -12,7 +12,9 @@ FIRST STEPS
  2. Log in with the administrator username and password you created in this wizard.
  3. Open "Settings" and enter your firm name, address and GSTIN, and upload your logo.
     Also fill in your PAYMENT DETAILS (bank account, IFSC, UPI ID) so your clients know where to pay.
-    All of these appear on every bill. There is also a switch to turn GST on or off, and the GST rate.
+    All of these appear on every bill. There is also a switch to turn GST on or off, the GST rate,
+    and your usual payment terms (how many days after the bill date a bill is due).
+    Under "Backups", add a second backup location (USB drive, network or cloud folder).
  4. Open "Staff" and create an account for each person who will use the software.
     Give each person their own login. Staff accounts can create and edit bills,
     clients and services. Only administrators can manage staff and settings.
@@ -49,8 +51,8 @@ WHERE EVERYTHING IS
                   In the software, Settings > "Client folders" shows the location and has a
                   "Rebuild all client folders now" button if you ever need to recreate them.
 
-Please copy the backups folder to a USB drive or cloud drive regularly. A backup that
-lives only on this computer does not help if this computer breaks.
+Set a second backup location in Settings > Backups. A backup that lives only on this
+computer does not help if this computer breaks.
 
 
 RESTORING A BACKUP

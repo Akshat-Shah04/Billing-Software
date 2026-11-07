@@ -1,3 +1,5 @@
+import Icon from "./Icon";
+
 interface Props {
   page: number;
   limit: number;
@@ -13,16 +15,17 @@ export default function Pager({ page, limit, total, onPage }: Props) {
   return (
     <div className="pager">
       <span>
-        {from}-{to} of {total}
+        {from}–{to} of {total}
       </span>
-      <button disabled={page <= 1} onClick={() => onPage(page - 1)}>
-        Previous
+      <span className="spacer" />
+      <button className="icon-only" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        <Icon name="chevronLeft" />
       </button>
       <span>
         Page {page} of {pages}
       </span>
-      <button disabled={page >= pages} onClick={() => onPage(page + 1)}>
-        Next
+      <button className="icon-only" aria-label="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+        <Icon name="chevronRight" />
       </button>
     </div>
   );

@@ -1,10 +1,10 @@
 ; Billing Software installer (Inno Setup 6.3 or newer).
-; Build:  powershell installer\build.ps1   then   ISCC.exe /DAppVersion=0.1.0 installer\billing.iss
+; Build:  powershell installer\build.ps1   then   ISCC.exe /DAppVersion=0.2.0 installer\billing.iss
 ; The GitHub Actions workflow .github/workflows/release.yml does both automatically.
 
 #define AppName "Billing Software"
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 #define ServiceName "BillingSoftware"
 #define FirewallRule "Billing Software"
@@ -25,17 +25,27 @@ OutputBaseFilename=BillingSoftware-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+WizardSizePercent=110
+SetupIconFile=assets\billing.ico
+WizardImageFile=assets\wizard-100.bmp,assets\wizard-125.bmp,assets\wizard-150.bmp,assets\wizard-175.bmp,assets\wizard-200.bmp
+WizardSmallImageFile=assets\wizard-small-100.bmp,assets\wizard-small-125.bmp,assets\wizard-small-150.bmp,assets\wizard-small-175.bmp,assets\wizard-small-200.bmp
 PrivilegesRequired=admin
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0
+; One setup file for every Windows 10 and 11 PC: 64-bit Intel/AMD, ARM (Snapdragon) and 32-bit.
+; The matching Node.js is chosen in [Files] below. 64-bit and ARM PCs install into "Program Files".
+ArchitecturesInstallIn64BitMode=x64compatible or arm64
+; Windows 10 version 1607 (Anniversary Update) or newer, which includes .NET Framework 4.6.2 for the service wrapper.
+MinVersion=10.0.14393
 UninstallDisplayName={#AppName}
+UninstallDisplayIcon={app}\billing.ico
+VersionInfoDescription={#AppName} Setup
+CloseApplications=no
 SetupLogging=yes
 InfoBeforeFile=info-before.txt
 InfoAfterFile=info-after.txt
 DisableReadyPage=no
 
 [Messages]
+WindowsVersionNotSupported=Billing Software needs Windows 10 (version 1607 or newer) or Windows 11. Please update Windows first: Settings > Update & Security > Windows Update.
 WelcomeLabel2=This wizard will install [name/ver] on this computer.%n%nBilling Software runs here as a background Windows service. Everyone in the office then uses it from a web browser, so nothing needs to be installed on their computers.%n%nThe next page explains exactly what will be installed and changed. It is recommended that you close other programs before continuing.
 
 [Tasks]
@@ -49,25 +59,32 @@ Name: "{commonappdata}\BillingSoftware\logs"
 ; Remove files from an older version before copying the new ones.
 Type: filesandordirs; Name: "{app}\server\dist"
 Type: filesandordirs; Name: "{app}\server\node_modules"
+Type: filesandordirs; Name: "{app}\server\assets"
 Type: filesandordirs; Name: "{app}\client\dist"
 Type: filesandordirs; Name: "{app}\node"
 
 [Files]
-Source: "staging\node\*"; DestDir: "{app}\node"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Exactly one Node.js is installed, the one that runs natively on this PC.
+Source: "staging\node\arm64\*"; DestDir: "{app}\node"; Check: UseNodeArm64; Flags: ignoreversion
+Source: "staging\node\x64\*"; DestDir: "{app}\node"; Check: UseNodeX64; Flags: ignoreversion
+Source: "staging\node\x86\*"; DestDir: "{app}\node"; Check: UseNodeX86; Flags: ignoreversion
 Source: "staging\server\*"; DestDir: "{app}\server"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "staging\client\*"; DestDir: "{app}\client"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "staging\service\*"; DestDir: "{app}\service"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "tools\*"; DestDir: "{app}\tools"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "assets\billing.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [INI]
 Filename: "{app}\Billing Software.url"; Section: "InternetShortcut"; Key: "URL"; String: "http://localhost:{code:GetPort}"
+Filename: "{app}\Billing Software.url"; Section: "InternetShortcut"; Key: "IconFile"; String: "{app}\billing.ico"
+Filename: "{app}\Billing Software.url"; Section: "InternetShortcut"; Key: "IconIndex"; String: "0"
 
 [Icons]
-Name: "{group}\Open Billing Software"; Filename: "{app}\Billing Software.url"
+Name: "{group}\Open Billing Software"; Filename: "{app}\Billing Software.url"; IconFilename: "{app}\billing.ico"
 Name: "{group}\Backups folder"; Filename: "{commonappdata}\BillingSoftware\backups"
 Name: "{group}\Log files"; Filename: "{commonappdata}\BillingSoftware\logs"
 Name: "{group}\Uninstall Billing Software"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Billing Software"; Filename: "{app}\Billing Software.url"; Tasks: desktopicon
+Name: "{autodesktop}\Billing Software"; Filename: "{app}\Billing Software.url"; IconFilename: "{app}\billing.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "http://localhost:{code:GetPort}"; Description: "Open Billing Software now"; Flags: postinstall shellexec skipifsilent
@@ -85,6 +102,22 @@ var
   AdminPage: TInputQueryWizardPage;
   ExistingData: Boolean;
 
+// ---- Which Node.js to install ----
+function UseNodeArm64: Boolean;
+begin
+  Result := IsArm64;
+end;
+
+function UseNodeX64: Boolean;
+begin
+  Result := IsWin64 and not IsArm64;
+end;
+
+function UseNodeX86: Boolean;
+begin
+  Result := not IsWin64;
+end;
+
 function DataDir: String;
 begin
   Result := ExpandConstant('{commonappdata}\BillingSoftware');
@@ -97,6 +130,60 @@ begin
   if not Exec(FileName, Params, WorkDir, SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     ResultCode := -1;
   Result := ResultCode;
+end;
+
+// True when another program is already listening on this TCP port. Reads netstat's numeric columns only,
+// because the state words ("LISTENING") are translated on non-English Windows.
+function PortInUse(Port: Integer): Boolean;
+var
+  Tmp: String;
+  Lines: TArrayOfString;
+  I, Code: Integer;
+begin
+  Result := False;
+  Tmp := ExpandConstant('{tmp}\netstat.txt');
+  if not Exec(ExpandConstant('{cmd}'), '/C netstat -ano -p TCP > "' + Tmp + '"', '', SW_HIDE, ewWaitUntilTerminated, Code) then Exit;
+  if not LoadStringsFromFile(Tmp, Lines) then Exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    // A listening socket has this port as its local address and ":0" as its remote address.
+    if (Pos(':' + IntToStr(Port) + ' ', Lines[I]) > 0) and (Pos(':0 ', Lines[I]) > 0) then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+// Waits until the server answers on /api/health (the first start creates the database, which takes a few seconds).
+function WaitForServer(Port: String; Seconds: Integer): Boolean;
+var
+  Http: Variant;
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to Seconds do
+  begin
+    try
+      Http := CreateOleObject('WinHttp.WinHttpRequest.5.1');
+      Http.SetTimeouts(1000, 1000, 1000, 2000);
+      Http.Open('GET', 'http://127.0.0.1:' + Port + '/api/health', False);
+      Http.Send('');
+      if Http.Status = 200 then
+      begin
+        Result := True;
+        Exit;
+      end;
+    except
+    end;
+    Sleep(1000);
+  end;
+end;
+
+function SavedPort: String;
+var
+  Saved: AnsiString;
+begin
+  Result := '';
+  if LoadStringFromFile(DataDir + '\port.txt', Saved) then Result := Trim(String(Saved));
 end;
 
 function GetPort(Param: String): String;
@@ -194,6 +281,14 @@ begin
     begin
       MsgBox('Please enter a port number between 1 and 65535 (for example 4000).', mbError, MB_OK);
       Result := False;
+    end
+    // On an upgrade the old Billing Software service is still using its own port, which is fine.
+    else if (IntToStr(Port) <> SavedPort) and PortInUse(Port) then
+    begin
+      if MsgBox('Another program on this computer is already using port ' + IntToStr(Port) + '.' + #13#10 + #13#10 +
+                'Billing Software would not be able to start on it. Choose another number, for example 4100 or 8040.' + #13#10 + #13#10 +
+                'Use port ' + IntToStr(Port) + ' anyway?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDNO then
+        Result := False;
     end;
   end;
 
@@ -300,7 +395,17 @@ begin
 
   S := S + 'Backups:' + NewLine +
        Space + 'A backup is made at startup and every 24 hours in ' + DataDir + '\backups' + NewLine +
-       Space + 'The 14 most recent backups are kept.' + NewLine + NewLine;
+       Space + 'The 14 most recent backups are kept. After installing, add a second location' + NewLine +
+       Space + '(USB drive, network or cloud folder) in Settings > Backups.' + NewLine + NewLine;
+
+  S := S + 'This computer:' + NewLine + Space;
+  if IsArm64 then
+    S := S + 'Windows on ARM: the ARM version of Node.js will be installed.'
+  else if IsWin64 then
+    S := S + '64-bit Windows: the 64-bit version of Node.js will be installed.'
+  else
+    S := S + '32-bit Windows: the 32-bit version of Node.js will be installed.';
+  S := S + NewLine + NewLine;
 
   if MemoTasksInfo <> '' then
     S := S + MemoTasksInfo + NewLine + NewLine;
@@ -411,7 +516,16 @@ begin
     if RunHidden(Svc, 'start', '') <> 0 then
       MsgBox('The Billing Software service was installed but could not be started right now.' + #13#10 + #13#10 +
              'Restart the computer, or open "Services" in Windows and start "Billing Software". ' +
-             'If it still does not start, look in ' + DataDir + '\logs for the reason.', mbError, MB_OK);
+             'If it still does not start, look in ' + DataDir + '\logs for the reason.', mbError, MB_OK)
+    else
+    begin
+      WizardForm.StatusLabel.Caption := 'Waiting for Billing Software to start (the first start sets up the database)...';
+      if not WaitForServer(Port, 90) then
+        MsgBox('The Billing Software service started, but it is not answering on port ' + Port + ' yet.' + #13#10 + #13#10 +
+               'Wait a minute and open http://localhost:' + Port + ' in your browser. If it still does not open, ' +
+               'look in ' + DataDir + '\logs for the reason, or run this installer again and choose another port.',
+               mbInformation, MB_OK);
+    end;
   end;
 end;
 
@@ -426,7 +540,8 @@ begin
       '    http://' + GetComputerNameString + ':' + GetPort('') + #13#10 + #13#10 +
       'Each client''s folder (details and bills) is kept in:' + #13#10 +
       '    ' + GetClientDir + #13#10 + #13#10 +
-      'Daily database backups are saved in ' + DataDir + '\backups. Click Finish to close this wizard.';
+      'Daily database backups are saved in ' + DataDir + '\backups. In Settings > Backups, add a second ' +
+      'location (a USB drive or a cloud folder) so a copy survives if this computer fails.';
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
