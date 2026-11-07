@@ -56,6 +56,15 @@ billing-software/
 └── docs/decisions.md    why things are the way they are
 ```
 
+## Documentation
+
+| Document | For |
+|---|---|
+| [User guide](docs/user-guide.md) | Staff and administrators: every screen, step by step, backups and troubleshooting |
+| [API reference](docs/api.md) | Every endpoint, field limit, status code and the GST/financial-year rules |
+| [Architecture and development](docs/architecture.md) | How it is built, data model, configuration, tests, installer and releases |
+| [Decision records](docs/decisions.md) | Why each important choice was made |
+
 ## Installing on a new computer (Windows)
 
 For an office, use the installer. It needs nothing installed beforehand.
