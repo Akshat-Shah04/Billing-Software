@@ -24,7 +24,7 @@ export interface LedgerEntry {
   details: string;
   /** The line as the statement prints it, e.g. "Professional fees, Anand Electricals, FY 2024-25" or "Received, UTR 5357...". */
   particulars: string;
-  /** Bill number for a bill; the credit note number for a credit note; empty for receipts. */
+  /** Bill number for a bill; the credit note number for a credit note; the receipt number for a payment. */
   ref: string;
   debit_paise: number;
   credit_paise: number;
@@ -126,12 +126,12 @@ export async function buildLedger(q: Queryable, o: { clientId?: number | null; g
       }
     }
     if (billIds.length) {
-      for (const p of (await q.query<any>("SELECT bill_id, paid_on::text AS paid_on, amount_paise, method, reference FROM payments WHERE bill_id = ANY($1::int[]) AND voided_at IS NULL", [billIds])).rows) {
+      for (const p of (await q.query<any>("SELECT bill_id, receipt_no, paid_on::text AS paid_on, amount_paise, method, reference FROM payments WHERE bill_id = ANY($1::int[]) AND voided_at IS NULL", [billIds])).rows) {
         const b = byId.get(p.bill_id);
         const how = METHOD_LABELS[p.method as PaymentMethod] ?? p.method;
         // "Received, UTR 5357..." for a bank transfer; "Received by UPI, ..." / "Received by cheque, 000123" otherwise.
         const said = `Received${p.method === "bank_transfer" ? "" : p.method === "cash" ? " in cash" : ` by ${how}`}${p.reference ? `, ${p.reference}` : ""}`;
-        all.push({ date: p.paid_on, type: "Payment", number: b.bill_no, client_name: b.client_name, details: said, particulars: `${said}${named(b.client_name)}`, ref: "", debit_paise: 0, credit_paise: p.amount_paise });
+        all.push({ date: p.paid_on, type: "Payment", number: b.bill_no, client_name: b.client_name, details: said, particulars: `${said}${named(b.client_name)} against bill ${b.bill_no}`, ref: p.receipt_no, debit_paise: 0, credit_paise: p.amount_paise });
       }
       for (const c of (await q.query<any>("SELECT bill_id, cn_no, cn_date::text AS cn_date, reason, total_paise FROM credit_notes WHERE bill_id = ANY($1::int[])", [billIds])).rows) {
         const b = byId.get(c.bill_id);

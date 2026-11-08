@@ -14,13 +14,15 @@ interface FeesReport {
   group_name: string | null;
   rows: {
     bill_no: string; bill_date: string; client_name: string; group_name: string | null; fees_paise: number; gst_paise: number;
-    reimbursement_paise: number; total_paise: number; received_paise: number; reduced_paise: number; balance_paise: number; status: string; cancelled: boolean;
+    reimbursement_paise: number; total_paise: number; received_paise: number; last_paid_on: string | null; reduced_paise: number; balance_paise: number; status: string; cancelled: boolean;
   }[];
+  receipts: { receipt_no: string; paid_on: string; client_name: string; group_name: string | null; bill_no: string; bill_date: string; method: string; reference: string | null; amount_paise: number }[];
   summary: {
     bills: number; cancelled: number; fees_paise: number; gst_paise: number; reimbursement_paise: number; total_paise: number; received_paise: number;
     reimbursed_paise: number; fees_received_paise: number; credited_paise: number; discount_paise: number; outstanding_paise: number;
+    collected_paise: number; receipts: number;
   };
-  months: { month: string; bills: number; fees_paise: number; gst_paise: number; reimbursement_paise: number; received_paise: number }[];
+  months: { month: string; bills: number; fees_paise: number; gst_paise: number; reimbursement_paise: number; received_paise: number; collected_paise: number }[];
 }
 
 /** The fees report (admins): bills in a period in brief, with a summary, to view here or download as Excel or PDF. */
@@ -104,6 +106,13 @@ export default function Reports() {
             <div className="tile-value">{formatRupees(s.received_paise)}</div>
             <div className="tile-sub">{formatRupees(s.fees_received_paise)} towards fees and GST</div>
           </div>
+          <div className="tile">
+            <div className="tile-label">Collected in period</div>
+            <div className="tile-value">{formatRupees(s.collected_paise)}</div>
+            <div className="tile-sub">
+              {s.receipts} {s.receipts === 1 ? "receipt" : "receipts"}, by date received
+            </div>
+          </div>
           <div className={`tile${s.outstanding_paise > 0 ? " alert" : ""}`}>
             <div className="tile-label">Outstanding</div>
             <div className="tile-value">{formatRupees(s.outstanding_paise)}</div>
@@ -126,7 +135,8 @@ export default function Reports() {
                   <th className="num">Fees</th>
                   <th className="num">GST</th>
                   <th className="num">Paid on behalf</th>
-                  <th className="num">Received</th>
+                  <th className="num" title="Received so far on the bills dated in this month">Received on these bills</th>
+                  <th className="num" title="Money that came in during this month, on any bill">Collected</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,6 +148,7 @@ export default function Reports() {
                     <td className="num">{formatRupees(m.gst_paise)}</td>
                     <td className="num">{formatRupees(m.reimbursement_paise)}</td>
                     <td className="num">{formatRupees(m.received_paise)}</td>
+                    <td className="num">{formatRupees(m.collected_paise)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -185,7 +196,10 @@ export default function Reports() {
                     <td className="num">{formatRupees(b.gst_paise)}</td>
                     <td className="num">{b.reimbursement_paise ? formatRupees(b.reimbursement_paise) : "–"}</td>
                     <td className="num">{formatRupees(b.total_paise)}</td>
-                    <td className="num">{formatRupees(b.received_paise)}</td>
+                    <td className="num">
+                      {formatRupees(b.received_paise)}
+                      {b.last_paid_on && <div className="muted tiny">last {formatDate(b.last_paid_on)}</div>}
+                    </td>
                     <td className="num">{b.cancelled ? "–" : formatRupees(b.balance_paise)}</td>
                     <td className="nowrap">{b.status}</td>
                   </tr>
@@ -194,6 +208,58 @@ export default function Reports() {
                   <tr>
                     <td colSpan={9} className="empty-cell">
                       No bills in this period.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {d && (
+        <div className="card flush">
+          <div className="card-pad">
+            <h2 style={{ margin: 0 }}>Receipts</h2>
+            <div className="muted small">Money received from {formatDate(d.from)} to {formatDate(d.to)}, by the date it came in (on any bill)</div>
+          </div>
+          <div className="table-wrap">
+            <table className="table-report">
+              <thead>
+                <tr>
+                  <th>Receipt</th>
+                  <th>Client</th>
+                  <th>Bill</th>
+                  <th>How paid</th>
+                  <th className="num">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.receipts.map((x) => (
+                  <tr key={x.receipt_no}>
+                    <td className="nowrap">
+                      <strong style={{ fontWeight: 600 }}>{x.receipt_no}</strong>
+                      <div className="muted tiny">{formatDate(x.paid_on)}</div>
+                    </td>
+                    <td>
+                      {x.client_name}
+                      {x.group_name && <div className="muted tiny">{x.group_name}</div>}
+                    </td>
+                    <td className="nowrap">
+                      {x.bill_no}
+                      <div className="muted tiny">{formatDate(x.bill_date)}</div>
+                    </td>
+                    <td>
+                      {x.method}
+                      {x.reference && <div className="muted tiny">{x.reference}</div>}
+                    </td>
+                    <td className="num">{formatRupees(x.amount_paise)}</td>
+                  </tr>
+                ))}
+                {!d.receipts.length && (
+                  <tr>
+                    <td colSpan={5} className="empty-cell">
+                      No money received in this period.
                     </td>
                   </tr>
                 )}

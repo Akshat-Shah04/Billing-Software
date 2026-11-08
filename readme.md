@@ -2,7 +2,7 @@
 
 **Developer:** Akshat Shah
 
-**Status:** v0.2: payments, credit notes, PDF bills, exports and off-PC backups (backend, frontend and automated tests)
+**Status:** v0.4: payment receipts, statements of account, fees report, client groups, payments, credit notes, PDF bills, exports and off-PC backups (backend, frontend and automated tests)
 
 ## Description
 
@@ -77,6 +77,24 @@ A billing software for an accountancy firm to manage clients, services and bills
 - **Forgot password** for administrators: a link on the login page sends a one-time reset link (valid 30 minutes) to the
   admin's email address. Set up the mail server under Settings → Email and add each admin's email under Staff → Edit.
   Changing a password logs that account out everywhere else. Staff passwords are still reset by an administrator.
+
+## New in v0.4
+
+- **Payment receipts**: every payment recorded, full or part, gets an acknowledgement receipt with its own gap-free number
+  per financial year of the date the money came in (`RCT/2026-27/0001`). The receipt says who paid, how much (in figures and
+  words), how and when, against which bill, and what is still due on that bill after it, marked *FULL PAYMENT* or
+  *PART PAYMENT* (a cheque receipt adds "subject to realisation"). Payments recorded before v0.4 are numbered when updating,
+  in the order they were received.
+- **Send it to the client** straight after recording the payment: the receipt opens with **View PDF**, **Download PDF**,
+  **Send email** (the PDF attached, to the client's saved email or any address typed in, through the mail server under
+  Settings → Email) and **Open WhatsApp** (the message ready; attach the PDF). Every receipt can be opened again from the
+  bill's Payments list. A voided payment keeps its number and its receipt is stamped *VOID*.
+- **Payment dates everywhere**: receipt numbers and dates on the bill PDF and the client-folder copies; a `receipts` folder
+  in each client's folder; the receipt number as the reference on the statement of account; *Last paid* on the Bills page
+  and a *Last paid on* column in the bills register CSV; receipt numbers in the client statement CSV.
+- **Fees report**: a **Receipts** list of the money received in the period by the date it came in (on screen, a Receipts sheet in
+  Excel and a section in the PDF), *Collected in period* in the summary, a *Collected* column month by month, and the last
+  payment date of each bill.
 
 ## Tech Stack
 
@@ -153,13 +171,20 @@ The wizard's own pages ([before](installer/info-before.txt), [after](installer/i
 
 ### Publishing a new installer (for the developer)
 
+Either push a version tag from your PC:
+
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
-The workflow in `.github/workflows/release.yml` runs the tests, builds the app, bundles Node.js and the
-service wrapper, compiles the installer with Inno Setup and attaches it to a GitHub Release.
+or create the release on GitHub's website: **Releases → Draft a new release**, choose the tag (e.g. `v0.3.1`,
+"Create new tag on publish"), target `main`, write the notes and **Publish release**.
+
+Either way, the workflow in `.github/workflows/release.yml` runs the tests, builds the app, bundles Node.js and the
+service wrapper, compiles the installer with Inno Setup and attaches `BillingSoftware-Setup-<version>.exe` and its
+`.sha256` to the release (a release made on the website keeps its title and notes). To rebuild a release's installer,
+use **Actions → Release installer → Run workflow** and type its tag.
 To build locally, run `installer\build.ps1`, then compile `installer\billing.iss` with Inno Setup 6.3+.
 The icon and wizard pictures in `installer/assets` are drawn by `installer\make-art.ps1` (run it again only if the artwork changes).
 

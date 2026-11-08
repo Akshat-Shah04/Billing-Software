@@ -7,6 +7,7 @@ import { HttpError } from "../lib/errors.js";
 import { METHOD_LABELS, PAYMENT_METHODS } from "../lib/format.js";
 import { todayISO } from "../lib/fy.js";
 import { addHistory, rupeesText } from "../lib/history.js";
+import { nextDocumentNumber } from "../lib/numbering.js";
 import { billForSettling, DEFAULT_SETTLE_REASON, settleShortfall } from "../lib/shortfall.js";
 import { optionalText } from "../lib/paging.js";
 import { requireAdmin } from "../middleware/auth.js";
@@ -69,14 +70,17 @@ export function paymentRoutes(db: Db, files: ClientFiles): Router {
       if (input.amount_paise > balance) throw new HttpError(400, `That is more than the balance due (${rupeesText(balance)})`);
       const rest = balance - input.amount_paise;
 
+      // Every payment gets an acknowledgement receipt, numbered by the date the money came in. The number is taken after
+      // every check has passed and rolls back with this transaction if anything fails, so the series has no gaps.
+      const receiptNo = await nextDocumentNumber(q, "RCT", paidOn);
       await q.query(
-        `INSERT INTO payments (bill_id, amount_paise, paid_on, method, reference, notes, created_by)
-         VALUES ($1, $2, $3::date, $4, $5, $6, $7)`,
-        [id, input.amount_paise, paidOn, input.method, input.reference, input.notes, req.user!.id],
+        `INSERT INTO payments (bill_id, amount_paise, paid_on, method, reference, notes, created_by, receipt_no)
+         VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8)`,
+        [id, input.amount_paise, paidOn, input.method, input.reference, input.notes, req.user!.id, receiptNo],
       );
       await addHistory(q, {
         billId: id, userId: req.user!.id, action: "payment_added",
-        summary: `Payment of ${rupeesText(input.amount_paise)} by ${METHOD_LABELS[input.method]}${input.reference ? ` (${input.reference})` : ""}`,
+        summary: `Payment of ${rupeesText(input.amount_paise)} by ${METHOD_LABELS[input.method]}${input.reference ? ` (${input.reference})` : ""}, receipt ${receiptNo}`,
       });
       // Settling: the client paid less and the firm accepts it. The rest is settled the way the user chose, dated with the payment.
       if (input.settle_rest && rest > 0) {
@@ -165,15 +169,15 @@ export function paymentRoutes(db: Db, files: ClientFiles): Router {
     const { reason } = voidSchema.parse(req.body);
     const billId = await db.tx(async (q) => {
       const p = (
-        await q.query<{ bill_id: number; amount_paise: number; voided_at: string | null }>(
-          "SELECT bill_id, amount_paise, voided_at FROM payments WHERE id = $1 FOR UPDATE",
+        await q.query<{ bill_id: number; amount_paise: number; voided_at: string | null; receipt_no: string }>(
+          "SELECT bill_id, amount_paise, voided_at, receipt_no FROM payments WHERE id = $1 FOR UPDATE",
           [id],
         )
       ).rows[0];
       if (!p) throw new HttpError(404, "Payment not found");
       if (p.voided_at) throw new HttpError(409, "This payment has already been voided");
       await q.query("UPDATE payments SET voided_at = now(), voided_by = $2, void_reason = $3 WHERE id = $1", [id, req.user!.id, reason]);
-      await addHistory(q, { billId: p.bill_id, userId: req.user!.id, action: "payment_voided", summary: `Payment of ${rupeesText(p.amount_paise)} voided: ${reason}` });
+      await addHistory(q, { billId: p.bill_id, userId: req.user!.id, action: "payment_voided", summary: `Payment of ${rupeesText(p.amount_paise)} (receipt ${p.receipt_no}) voided: ${reason}` });
       return p.bill_id;
     });
     await files.syncBill(billId);

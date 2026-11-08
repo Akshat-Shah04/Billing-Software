@@ -2,6 +2,7 @@ import type { Settings } from "../routes/settings.js";
 import {
   METHOD_LABELS, dueLine, fyLongLabel, jurisdictionLine, money, paymentLines, prettyDate, prettyTimestamp, type PaymentMethod,
 } from "./format.js";
+import { receivedHow, type Receipt } from "./receipt.js";
 import { amountInWords } from "./words.js";
 
 // Self-contained HTML copies of a bill and of a credit note (used for the client folders). One file each,
@@ -130,7 +131,7 @@ ${bill.discount_paise > 0 ? `<div><span>Discount</span><span>− ${money(bill.di
     ? `<div class="hist"><div class="label">Payments received</div><table>${payments
         .map(
           (p: any) =>
-            `<tr><td>${prettyDate(p.paid_on)}</td><td>${esc(METHOD_LABELS[p.method as PaymentMethod] ?? p.method)}${p.reference ? ` · ${esc(p.reference)}` : ""}</td><td class="n">${money(p.amount_paise)}</td></tr>`,
+            `<tr><td>${prettyDate(p.paid_on)}</td><td>${esc(p.receipt_no ?? "")}</td><td>${esc(METHOD_LABELS[p.method as PaymentMethod] ?? p.method)}${p.reference ? ` · ${esc(p.reference)}` : ""}</td><td class="n">${money(p.amount_paise)}</td></tr>`,
         )
         .join("")}</table></div>`
     : "";
@@ -178,4 +179,32 @@ ${remarks([`Reason: ${cn.reason}`, `This credit note reduces the amount due on b
 ${signOff(org)}
 <p class="m foot">Issued by ${esc(cn.created_by_name)}. This is an automatic copy kept for backup; the original is in Billing Software.</p>`;
   return page(`${cn.cn_no} - ${cn.client_name}`, body);
+}
+
+/** The acknowledgement receipt for one payment, as a self-contained page (the client-folder copy). */
+export function renderReceiptHtml(r: Receipt, org: Settings, logoUri: string | null = null): string {
+  const voided = !!r.voided_at;
+  const rows: [string, string][] = [["Receipt No.", r.receipt_no], ["Date received", prettyDate(r.paid_on)], ["Against bill", r.bill_no]];
+  if (r.client_file_no) rows.push(["File No.", r.client_file_no]);
+  const tag = voided ? '<span class="tag bad">VOID</span>' : r.kind === "full" ? '<span class="tag paid">FULL PAYMENT</span>' : '<span class="tag">PART PAYMENT</span>';
+  const how = receivedHow(r.method, METHOD_LABELS[r.method as PaymentMethod] ?? r.method, r.reference);
+  const body = `${voided ? '<div class="stamp">VOID</div>' : ""}
+${letterhead(org, logoUri)}
+${party(r, "PAYMENT RECEIPT", rows, tag)}
+<p style="font-size:1.05rem">Received with thanks from <strong>${esc(r.client_name)}</strong> the sum of <strong>${money(r.amount_paise)}</strong>
+(${esc(amountInWords(r.amount_paise))}) ${esc(how)} on ${prettyDate(r.paid_on)}, towards bill No. ${esc(r.bill_no)} dated ${prettyDate(r.bill_date)}.</p>
+<div class="t"><div><span>Bill ${esc(r.bill_no)}</span><span>${money(r.bill_total_paise)}</span></div>
+${r.reduced_paise > 0 ? `<div><span>Credit notes / discount</span><span>− ${money(r.reduced_paise)}</span></div>` : ""}
+${r.received_before_paise > 0 ? `<div><span>Received earlier</span><span>− ${money(r.received_before_paise)}</span></div>` : ""}
+<div><span>Received now (this receipt)</span><span>− ${money(r.amount_paise)}</span></div>
+<div class="g"><span>Balance due on the bill</span><span>${money(r.balance_after_paise)}</span></div></div>
+${voided ? `<div class="cancel">This receipt is void: the payment was cancelled on ${prettyTimestamp(r.voided_at)}${r.void_reason ? ` (${esc(r.void_reason)})` : ""}.</div>` : ""}
+${remarks([
+    voided ? "" : r.kind === "full" ? `Bill ${r.bill_no} is fully paid. Thank you.` : `Part payment. ${money(r.balance_after_paise)} is still due on bill ${r.bill_no}.`,
+    r.method === "cheque" ? "Subject to realisation of the cheque." : "",
+    r.notes ?? "",
+  ])}
+${signOff(org)}
+<p class="m foot">Recorded by ${esc(r.created_by_name)}. This is an automatic copy kept for backup; the original is in Billing Software.</p>`;
+  return page(`${r.receipt_no} - ${r.client_name}`, body);
 }

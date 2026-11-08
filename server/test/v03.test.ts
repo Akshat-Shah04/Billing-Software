@@ -206,8 +206,8 @@ describe("fees report (admin)", () => {
     expect(r.rows.map((x: any) => x.status)).toEqual(["Overdue", "Overdue", "Cancelled"]); // long past their due dates
     expect(r.summary).toMatchObject({ bills: 2, cancelled: 1, fees_paise: 350_000, reimbursement_paise: 40_000, total_paise: 390_000, outstanding_paise: 390_000 });
     expect(r.months).toEqual([
-      { month: "May 2023", bills: 1, fees_paise: 100_000, gst_paise: 0, reimbursement_paise: 0, received_paise: 0 },
-      { month: "Jun 2023", bills: 1, fees_paise: 250_000, gst_paise: 0, reimbursement_paise: 40_000, received_paise: 0 },
+      { month: "May 2023", bills: 1, fees_paise: 100_000, gst_paise: 0, reimbursement_paise: 0, received_paise: 0, collected_paise: 0 },
+      { month: "Jun 2023", bills: 1, fees_paise: 250_000, gst_paise: 0, reimbursement_paise: 40_000, received_paise: 0, collected_paise: 0 },
     ]);
     expect((await api.get("/api/reports/fees").set(auth(staff))).status).toBe(403); // admins only
   });
@@ -218,7 +218,7 @@ describe("fees report (admin)", () => {
     expect(xlsx.headers["content-disposition"]).toContain("Fees report 2023-05-01 to 2023-06-30.xlsx");
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(xlsx.body);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(["Summary", "Month by month", "Bills"]);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["Summary", "Month by month", "Bills", "Receipts"]);
     const bills = wb.getWorksheet("Bills")!;
     expect(bills.getRow(1).getCell(1).value).toBe("Bill no.");
     expect(bills.getRow(2).getCell(5).value).toBe(1000); // fees in rupees, as a number

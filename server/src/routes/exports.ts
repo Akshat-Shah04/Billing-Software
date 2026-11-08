@@ -41,13 +41,13 @@ export function exportRoutes(db: Db): Router {
     const { sql, params } = billFilterSql({ q, clientId, fy, status: status as never, groupId }, likePattern);
     const { rows } = await db.query(`SELECT ${BILL_LIST_COLUMNS} ${sql} ORDER BY b.bill_date, b.id`, params);
 
-    const head = ["Bill no.", "Bill date", "Financial year", "Due date", "Client", "Client GSTIN", "Status", "Overdue", "Fees", "GST rate %", "GST", "Paid on behalf", "Total", "Credit notes", "Paid", "Discount", "Balance due", "Created by"];
+    const head = ["Bill no.", "Bill date", "Financial year", "Due date", "Client", "Client GSTIN", "Status", "Overdue", "Fees", "GST rate %", "GST", "Paid on behalf", "Total", "Credit notes", "Paid", "Last paid on", "Discount", "Balance due", "Created by"];
     const body = rows.map((r: any) => {
       const b = withSettlement(r);
       return [
         text(b.bill_no), b.bill_date, fyLabelOf(b.fy_start), b.due_date ?? "", text(b.client_name), text(b.client_gstin ?? ""),
         stateText(b), b.overdue ? "Yes" : "No", rupees(b.subtotal_paise), String(b.gst_rate_percent), rupees(b.gst_paise), rupees(b.reimbursement_paise), rupees(b.total_paise),
-        rupees(b.credited_paise), rupees(b.paid_paise), rupees(b.discount_paise), rupees(b.balance_paise), text(b.created_by_name),
+        rupees(b.credited_paise), rupees(b.paid_paise), b.last_paid_on ?? "", rupees(b.discount_paise), rupees(b.balance_paise), text(b.created_by_name),
       ];
     });
     sendCsv(res, `bills${fy !== null ? `-FY${fyLabelOf(fy)}` : ""}.csv`, [head, ...body]);
@@ -73,7 +73,7 @@ export function exportRoutes(db: Db): Router {
     ).rows;
     const ids = bills.map((b: any) => b.id);
     const payments = ids.length
-      ? (await db.query<any>("SELECT bill_id, paid_on::text AS paid_on, amount_paise, method, reference FROM payments WHERE bill_id = ANY($1::int[]) AND voided_at IS NULL", [ids])).rows
+      ? (await db.query<any>("SELECT bill_id, receipt_no, paid_on::text AS paid_on, amount_paise, method, reference FROM payments WHERE bill_id = ANY($1::int[]) AND voided_at IS NULL", [ids])).rows
       : [];
     const credits = ids.length
       ? (await db.query<any>("SELECT bill_id, cn_no, cn_date::text AS cn_date, reason, total_paise FROM credit_notes WHERE bill_id = ANY($1::int[])", [ids])).rows
@@ -91,7 +91,7 @@ export function exportRoutes(db: Db): Router {
       if (b.status === "cancelled") entries.push({ date: b.cancelled_on ?? b.bill_date, order: 3, type: "Cancelled", number: b.bill_no, details: "Bill cancelled", debit: 0, credit: b.total_paise });
     }
     for (const c of credits) entries.push({ date: c.cn_date, order: 1, type: "Credit note", number: c.cn_no, details: `${c.reason} (against ${billNo.get(c.bill_id)})`, debit: 0, credit: c.total_paise });
-    for (const p of payments) entries.push({ date: p.paid_on, order: 2, type: "Payment", number: billNo.get(p.bill_id) ?? "", details: `${METHOD_LABELS[p.method as PaymentMethod] ?? p.method}${p.reference ? ` - ${p.reference}` : ""}`, debit: 0, credit: p.amount_paise });
+    for (const p of payments) entries.push({ date: p.paid_on, order: 2, type: "Payment", number: p.receipt_no, details: `${METHOD_LABELS[p.method as PaymentMethod] ?? p.method}${p.reference ? ` - ${p.reference}` : ""} (bill ${billNo.get(p.bill_id) ?? ""})`, debit: 0, credit: p.amount_paise });
     for (const d of discounts) entries.push({ date: d.given_on, order: 2.5, type: "Discount", number: billNo.get(d.bill_id) ?? "", details: d.reason, debit: 0, credit: d.amount_paise });
     entries.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order || a.number.localeCompare(b.number));
 

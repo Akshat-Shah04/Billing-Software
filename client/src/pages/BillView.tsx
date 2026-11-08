@@ -11,7 +11,7 @@ import StatusBadge from "../components/StatusBadge";
 import { useLoad, useLogoUrl } from "../hooks";
 import { amountInWords } from "../words";
 import { calculateTotals, formatDate, formatRupees, fyLabel, paiseToInput, rupeesToPaise, todayISO } from "../money";
-import type { Bill, Discount, HistoryEntry, Payment, PaymentMethod, Settings } from "../types";
+import type { Bill, Discount, HistoryEntry, Payment, PaymentMethod, Receipt, Settings } from "../types";
 
 export const METHODS: [PaymentMethod, string][] = [
   ["upi", "UPI"],
@@ -23,7 +23,7 @@ export const METHODS: [PaymentMethod, string][] = [
 ];
 const methodLabel = (m: PaymentMethod) => METHODS.find(([v]) => v === m)?.[1].replace(/ \(.*\)$/, "") ?? m;
 
-type SheetName = null | "payment" | "credit" | "cancel" | "void" | "whatsapp" | "discount" | "void-discount";
+type SheetName = null | "payment" | "credit" | "cancel" | "void" | "whatsapp" | "discount" | "void-discount" | "receipt";
 
 /** A phone number as WhatsApp wants it: country code + number, digits only. */
 export function whatsappNumber(phone: string | null, countryCode: string): string {
@@ -46,6 +46,7 @@ export default function BillView() {
   const [sheet, setSheet] = useState<SheetName>(null);
   const [voiding, setVoiding] = useState<Payment | null>(null);
   const [voidingDiscount, setVoidingDiscount] = useState<Discount | null>(null);
+  const [receiptFor, setReceiptFor] = useState<Payment | null>(null);
   const [notice, setNotice] = useState("");
   const [actionError, setActionError] = useState("");
 
@@ -392,12 +393,24 @@ export default function BillView() {
                         {formatDate(p.paid_on)}
                         {p.reference && ` · ${p.reference}`} · by {p.created_by_name}
                       </div>
+                      <div className="meta">Receipt {p.receipt_no}</div>
                       {p.notes && <div className="meta">{p.notes}</div>}
                       {p.voided_at && (
                         <div className="meta">
                           Voided by {p.voided_by_name}: {p.void_reason}
                         </div>
                       )}
+                      <button
+                        className="link"
+                        style={{ marginLeft: "-0.35rem" }}
+                        onClick={() => {
+                          if (p.voided_at) return pdf(`/payments/${p.id}/receipt.pdf?inline=1`);
+                          setReceiptFor(p);
+                          setSheet("receipt");
+                        }}
+                      >
+                        {p.voided_at ? "Void receipt (PDF)" : "Receipt…"}
+                      </button>
                       {admin && !p.voided_at && (
                         <button
                           className="link danger"
@@ -511,7 +524,32 @@ export default function BillView() {
         </aside>
       </div>
 
-      <PaymentSheet open={sheet === "payment"} bill={b} onClose={() => setSheet(null)} onDone={() => done("Payment recorded.")} />
+      <PaymentSheet
+        open={sheet === "payment"}
+        bill={b}
+        onClose={() => setSheet(null)}
+        onDone={(updated) => {
+          // A receipt is made for every payment: open it straight away so it can be sent to the client.
+          const newest = updated.payments.reduce<Payment | null>((m, p) => (!m || p.id > m.id ? p : m), null);
+          done(newest ? `Payment recorded. Receipt ${newest.receipt_no} is ready to send.` : "Payment recorded.");
+          if (newest) {
+            setReceiptFor(newest);
+            setSheet("receipt");
+          }
+        }}
+      />
+      {receiptFor && (
+        <ReceiptSheet
+          open={sheet === "receipt"}
+          payment={receiptFor}
+          org={org}
+          onClose={() => setSheet(null)}
+          onEmailed={(to) => {
+            setHistoryTick((t) => t + 1);
+            setNotice(`Receipt ${receiptFor.receipt_no} emailed to ${to}.`);
+          }}
+        />
+      )}
       {admin && <CreditNoteSheet open={sheet === "credit"} bill={b} onClose={() => setSheet(null)} onDone={(cnNo) => done(`Credit note ${cnNo} issued.`)} />}
       {admin && <CancelSheet open={sheet === "cancel"} bill={b} onClose={() => setSheet(null)} onDone={() => done("Bill cancelled.")} />}
       {admin && voiding && <VoidSheet open={sheet === "void"} payment={voiding} onClose={() => setSheet(null)} onDone={() => done("Payment voided.")} />}
@@ -1021,6 +1059,156 @@ function WhatsAppSheet({ open, bill, org, onClose }: { open: boolean; bill: Bill
       <div className="info-box pre small" style={{ display: "block" }}>
         {text}
       </div>
+    </Sheet>
+  );
+}
+
+/* ====================================================================== */
+
+/** The acknowledgement receipt for one payment: view it, or send it to the client by email or on WhatsApp. */
+function ReceiptSheet({ open, payment, org, onClose, onEmailed }: { open: boolean; payment: Payment; org: Settings | null; onClose: () => void; onEmailed: (to: string) => void }) {
+  const receipt = useLoad(() => (open ? api<Receipt>(`/payments/${payment.id}/receipt`) : Promise.resolve(null)), `${payment.id}|${open}`);
+  // The loader keeps the previous receipt while the next one loads: only use it once it is this payment's.
+  const r = receipt.data && receipt.data.id === payment.id ? receipt.data : null;
+  const [email, setEmail] = useState("");
+  const [lastKey, setLastKey] = useState("");
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState("");
+  const [busy, setBusy] = useState<"" | "email" | "download">("");
+
+  // Each time it opens for a receipt, start again with the client's saved email address.
+  const key = `${payment.id}|${open}|${r ? "loaded" : ""}`;
+  if (key !== lastKey) {
+    setLastKey(key);
+    setEmail(r?.client_email ?? "");
+    if (!r) {
+      setError("");
+      setSent("");
+    }
+  }
+
+  const number = whatsappNumber(r?.client_phone ?? null, org?.default_country_code ?? "91");
+  const how = r ? (r.method === "cash" ? "in cash" : `by ${methodLabel(r.method)}`) : "";
+  const text = r
+    ? [
+        `Dear ${r.client_name},`,
+        "",
+        `We acknowledge with thanks the receipt of ${formatRupees(r.amount_paise)} ${how}${r.reference ? ` (ref. ${r.reference})` : ""} on ${formatDate(r.paid_on)} towards bill ${r.bill_no}.`,
+        r.kind === "full" ? `Bill ${r.bill_no} is now fully paid.` : `Balance still due on this bill: ${formatRupees(r.balance_after_paise)}.`,
+        `Receipt No.: ${r.receipt_no}`,
+        "",
+        "Thank you,",
+        org?.org_name ?? "",
+      ]
+        .join("\n")
+        .trim()
+    : "";
+
+  async function view() {
+    setError("");
+    try {
+      await openPdf(`/payments/${payment.id}/receipt.pdf?inline=1`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  async function download() {
+    setError("");
+    setBusy("download");
+    try {
+      await downloadFile(`/payments/${payment.id}/receipt.pdf`, `Receipt ${payment.receipt_no.replace(/\//g, "-")}.pdf`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function sendEmail() {
+    setError("");
+    setSent("");
+    setBusy("email");
+    try {
+      const res = await api<{ sent_to: string }>(`/payments/${payment.id}/receipt/email`, { method: "POST", body: { to: email.trim() || null } });
+      setSent(res.sent_to);
+      onEmailed(res.sent_to);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <Sheet
+      open={open}
+      title={`Receipt ${payment.receipt_no}`}
+      subtitle={r ? `${formatRupees(r.amount_paise)} received on ${formatDate(r.paid_on)} · ${r.voided_at ? "void" : r.kind === "full" ? "full payment" : "part payment"}` : "Loading…"}
+      onClose={onClose}
+    >
+      {receipt.error && <Message kind="error">{receipt.error}</Message>}
+      {error && <Message kind="error">{error}</Message>}
+      {sent && <Message kind="notice">Receipt emailed to {sent}.</Message>}
+      {r && (
+        <>
+          <dl className="facts" style={{ marginTop: 0 }}>
+            <dt>Bill {r.bill_no}</dt>
+            <dd>{formatRupees(r.bill_total_paise)}</dd>
+            {r.reduced_paise > 0 && (
+              <>
+                <dt>Credit notes / discount</dt>
+                <dd>− {formatRupees(r.reduced_paise)}</dd>
+              </>
+            )}
+            {r.received_before_paise > 0 && (
+              <>
+                <dt>Received earlier</dt>
+                <dd>− {formatRupees(r.received_before_paise)}</dd>
+              </>
+            )}
+            <dt>This receipt</dt>
+            <dd>− {formatRupees(r.amount_paise)}</dd>
+            <hr />
+            <dt className="total">Balance due</dt>
+            <dd className="total">{formatRupees(r.balance_after_paise)}</dd>
+          </dl>
+          <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap", margin: "1rem 0" }}>
+            <button type="button" onClick={view}>
+              <Icon name="pdf" />
+              View PDF
+            </button>
+            <button type="button" onClick={download} disabled={busy === "download"}>
+              <Icon name="download" />
+              {busy === "download" ? "Preparing…" : "Download PDF"}
+            </button>
+          </div>
+          {r.voided_at ? (
+            <Message kind="warn">This payment was voided, so the receipt is marked VOID and can't be sent.</Message>
+          ) : (
+            <>
+              <label htmlFor="r-email">Email the receipt (PDF attached)</label>
+              <div className="row" style={{ gap: "0.5rem" }}>
+                <input id="r-email" className="grow" type="email" maxLength={200} placeholder="client@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <button type="button" className="primary" onClick={sendEmail} disabled={busy === "email" || !email.trim()}>
+                  {busy === "email" ? "Sending…" : "Send email"}
+                </button>
+              </div>
+              {!r.client_email && <div className="hint">No email address is saved for {r.client_name}: type one, or add it to the client.</div>}
+
+              <label style={{ marginTop: "1.1rem" }}>Or send on WhatsApp</label>
+              <div className="tiny muted" style={{ marginBottom: "0.4rem" }}>
+                Download the PDF, open the chat with this message ready, then attach the PDF.
+              </div>
+              <a className="btn" href={`https://wa.me/${number}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">
+                <Icon name="message" />
+                Open WhatsApp{number ? ` (+${number})` : ""}
+              </a>
+              <div className="info-box pre small" style={{ display: "block", marginTop: "0.75rem" }}>
+                {text}
+              </div>
+            </>
+          )}
+        </>
+      )}
     </Sheet>
   );
 }

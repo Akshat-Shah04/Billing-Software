@@ -19,6 +19,7 @@ import { creditNoteRoutes } from "./routes/creditNotes.js";
 import { documentRoutes } from "./routes/documents.js";
 import { exportRoutes } from "./routes/exports.js";
 import { paymentRoutes } from "./routes/payments.js";
+import { receiptRoutes } from "./routes/receipts.js";
 import { reportRoutes } from "./routes/reports.js";
 import { serviceRoutes } from "./routes/services.js";
 import { mailSettingsRoutes } from "./routes/mailSettings.js";
@@ -54,6 +55,7 @@ export function createApp(
   api.use("/bills", billRoutes(db, files));
   api.use("/exports", exportRoutes(db));
   api.use(paymentRoutes(db, files)); // /bills/:id/payments and /payments/:id/void
+  api.use(receiptRoutes(db, mailer)); // /payments/:id/receipt, .pdf and /email
   api.use(creditNoteRoutes(db, files)); // /bills/:id/credit-notes and /credit-notes/:id
   api.use(documentRoutes(db)); // /bills/:id/pdf and /credit-notes/:id/pdf
   api.use("/settings/mail", requireAdmin, mailSettingsRoutes(db, mailer));

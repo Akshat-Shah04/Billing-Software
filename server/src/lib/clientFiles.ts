@@ -3,8 +3,9 @@ import path from "node:path";
 import type { Db } from "../db/index.js";
 import { loadLogo, loadSettings, type Settings } from "../routes/settings.js";
 import { getBill, getCreditNote } from "./billData.js";
-import { renderBillHtml, renderCreditNoteHtml } from "./documentHtml.js";
+import { renderBillHtml, renderCreditNoteHtml, renderReceiptHtml } from "./documentHtml.js";
 import { fyLabelOf, money, prettyDate, safeFileName } from "./format.js";
+import { getReceipt, receiptIdsForClient, type Receipt } from "./receipt.js";
 
 /**
  * A readable backup kept on the PC's disk, one folder per client:
@@ -17,6 +18,8 @@ import { fyLabelOf, money, prettyDate, safeFileName } from "./format.js";
  *         2026-27-0001_2026-11-05.html     each bill, printable in any browser
  *       credit-notes/
  *         CN-2026-27-0001_2026-11-20.html  each credit note
+ *       receipts/
+ *         RCT-2026-27-0001_2026-11-25.html each payment receipt
  *
  * Folders are only ever added to or renamed, never deleted, even when a client is deleted in the app.
  * A problem writing files is logged and shown in Settings, but never stops a bill from being saved.
@@ -169,6 +172,22 @@ export function createClientFiles(db: Db, dir: string | null): ClientFiles {
       );
     }
 
+    const receipts: Receipt[] = [];
+    for (const id of await receiptIdsForClient(db, clientId)) {
+      const r = await getReceipt(db, id);
+      if (r) receipts.push(r);
+    }
+    if (receipts.length || (await exists(path.join(clientDir, "receipts")))) {
+      await writeDocuments(
+        path.join(clientDir, "receipts"),
+        receipts.map((r) => ({
+          file: `${safeFileName(r.receipt_no)}_${r.paid_on}.html`,
+          html: renderReceiptHtml(r, firm.org, firm.logoUri),
+          always: onlyBillId === null || r.bill_id === onlyBillId,
+        })),
+      );
+    }
+
     const owed = bills.reduce((sum, b) => sum + Math.max(b.balance_paise, 0), 0);
     const lines = [
       "CLIENT DETAILS",
@@ -194,6 +213,9 @@ export function createClientFiles(db: Db, dir: string | null): ClientFiles {
       ...(creditNotes.length
         ? ["", `CREDIT NOTES (${creditNotes.length})`, "-----------------", ...creditNotes.map((c) => `${c.cn_no}   ${prettyDate(c.cn_date)}   against ${c.bill_no}   ${money(c.total_paise)}   ${c.reason}`)]
         : []),
+      ...(receipts.length
+        ? ["", `RECEIPTS (${receipts.length})`, "-------------", ...receipts.map((r) => `${r.receipt_no}   ${prettyDate(r.paid_on)}   against ${r.bill_no}   ${money(r.amount_paise)}   ${r.voided_at ? "VOID" : r.kind === "full" ? "Full payment" : "Part payment"}`)]
+        : []),
       "",
       `Updated automatically: ${new Date().toLocaleString("en-IN")}`,
       "Do not edit these files: they are rewritten whenever the client or a bill changes.",
@@ -201,7 +223,7 @@ export function createClientFiles(db: Db, dir: string | null): ClientFiles {
     await writeAtomic(path.join(clientDir, "client-details.txt"), "﻿" + lines.join("\r\n") + "\r\n");
     await writeAtomic(
       path.join(clientDir, "client-data.json"),
-      JSON.stringify({ exported_at: new Date().toISOString(), client, bills, credit_notes: creditNotes }, null, 2),
+      JSON.stringify({ exported_at: new Date().toISOString(), client, bills, credit_notes: creditNotes, receipts }, null, 2),
     );
   }
 

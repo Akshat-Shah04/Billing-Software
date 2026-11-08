@@ -5,7 +5,7 @@ const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "IN
 export const rupeesText = (paise: number): string => rupees.format(paise / 100);
 
 export type HistoryAction =
-  | "created" | "edited" | "cancelled" | "payment_added" | "payment_voided" | "credit_note_issued" | "discount_given" | "discount_voided";
+  | "created" | "edited" | "cancelled" | "payment_added" | "payment_voided" | "credit_note_issued" | "discount_given" | "discount_voided" | "receipt_emailed";
 
 /** The parts of a bill that matter for "what changed". */
 export interface BillSnapshot {
