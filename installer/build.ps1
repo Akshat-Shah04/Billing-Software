@@ -36,6 +36,18 @@ $Staging = Join-Path $Installer "staging"
 $Cache = Join-Path $Installer ".cache"
 
 function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
+
+# Downloads can fail for a moment (e.g. "504 Gateway Time-out" from GitHub), so each one is tried up to 4 times.
+function Retry([scriptblock]$action, [string]$what) {
+  for ($attempt = 1; ; $attempt++) {
+    try { return & $action }
+    catch {
+      if ($attempt -ge 4) { throw "Could not download $what after $attempt tries: $($_.Exception.Message)" }
+      Write-Host "  $what failed ($($_.Exception.Message)); trying again in $($attempt * 10) seconds"
+      Start-Sleep -Seconds ($attempt * 10)
+    }
+  }
+}
 function Run($dir, $cmd) {
   Push-Location $dir
   try {
@@ -71,7 +83,7 @@ function Get-Node([int]$major, [string]$arch) {
   New-Item -ItemType Directory -Force $dest | Out-Null
   if ($NodeExe) { Copy-Item $NodeExe "$dest\node.exe"; return }
 
-  $index = Invoke-RestMethod "https://nodejs.org/dist/index.json"
+  $index = Retry { Invoke-RestMethod "https://nodejs.org/dist/index.json" } "the Node.js release list"
   $release = $index | Where-Object { $_.version -like "v$major.*" -and $_.files -contains "win-$arch-zip" } | Select-Object -First 1
   if (-not $release) { throw "No Node.js v$major release found for win-$arch" }
   $version = $release.version
@@ -79,9 +91,9 @@ function Get-Node([int]$major, [string]$arch) {
   $zip = Join-Path $Cache $zipName
   if (-not (Test-Path $zip)) {
     Write-Host "Downloading $zipName"
-    Invoke-WebRequest "https://nodejs.org/dist/$version/$zipName" -OutFile $zip -UseBasicParsing
+    Retry { Invoke-WebRequest "https://nodejs.org/dist/$version/$zipName" -OutFile $zip -UseBasicParsing } $zipName
   }
-  $sums = (Invoke-WebRequest "https://nodejs.org/dist/$version/SHASUMS256.txt" -UseBasicParsing).Content
+  $sums = (Retry { Invoke-WebRequest "https://nodejs.org/dist/$version/SHASUMS256.txt" -UseBasicParsing } "the Node.js checksums").Content
   $line = $sums -split "`n" | Where-Object { $_ -match "\s$([regex]::Escape($zipName))$" } | Select-Object -First 1
   if (-not $line) { throw "No checksum published for $zipName" }
   $expected = $line.Split(" ")[0].Trim()
@@ -106,7 +118,7 @@ Step "Adding the Windows service wrapper (WinSW)"
 if ($SkipService) {
   Write-Host "Skipped (-SkipService)"
 } else {
-  Invoke-WebRequest $WinSwUrl -OutFile "$Staging\service\billing-service.exe" -UseBasicParsing
+  Retry { Invoke-WebRequest $WinSwUrl -OutFile "$Staging\service\billing-service.exe" -UseBasicParsing } "WinSW"
 }
 
 Step "Done"
