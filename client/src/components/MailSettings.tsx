@@ -68,12 +68,13 @@ export default function MailSettings() {
   const set = (patch: Partial<Mail>) => setM({ ...m, ...patch });
   return (
     <>
-      <div className="section-label">Email (for “Forgot password”)</div>
+      <div className="section-label">Email (payment receipts and “Forgot password”)</div>
       <div className="card">
         {!m.configured && (
           <Message kind="info">
-            Not set up yet, so administrators can’t reset a forgotten password by email. Use your email provider’s SMTP details: for Gmail, smtp.gmail.com, port
-            587 and an “app password”; for Outlook / Microsoft 365, smtp.office365.com, port 587.
+            Not set up yet, so payment receipts can’t be emailed to clients and administrators can’t reset a forgotten password by email. Fill in your
+            email provider’s details. For Gmail: Mail server <strong>smtp.gmail.com</strong>, port 587, STARTTLS, your Gmail address as Username and
+            Send from, and a Gmail “app password” (not your normal password). For Outlook / Microsoft 365: <strong>smtp.office365.com</strong>, port 587.
           </Message>
         )}
         {error && <Message kind="error">{error}</Message>}
@@ -82,6 +83,11 @@ export default function MailSettings() {
           <div className="field">
             <label htmlFor="m-host">Mail server (SMTP)</label>
             <input id="m-host" maxLength={200} placeholder="e.g. smtp.gmail.com" value={m.smtp_host} onChange={(e) => set({ smtp_host: e.target.value.trim() })} />
+            {m.smtp_host.includes("@") && (
+              <div className="hint" style={{ color: "var(--danger)" }}>
+                This is the server’s name, not an email address. For Gmail type smtp.gmail.com; your email address goes under Username and Send from.
+              </div>
+            )}
           </div>
           <div className="grid" style={{ gridTemplateColumns: "1fr 1.4fr" }}>
             <div className="field">
@@ -121,6 +127,7 @@ export default function MailSettings() {
           <div className="field">
             <label htmlFor="m-from">Send from</label>
             <input id="m-from" maxLength={200} placeholder="e.g. Shah & Associates <billing@yourfirm.in>" value={m.smtp_from} onChange={(e) => set({ smtp_from: e.target.value })} />
+            <div className="hint">The address clients see the receipt come from. With Gmail, use your Gmail address.</div>
           </div>
           <div className="field">
             <label htmlFor="m-url">Address of this software (for links in emails)</label>
@@ -145,7 +152,7 @@ export default function MailSettings() {
           </button>
         </div>
       </div>
-      <p className="section-foot">Used only to send password reset links to administrators. The password is stored on this computer and never shown again.</p>
+      <p className="section-foot">Used to email payment receipts to clients and password reset links to administrators. The password is stored on this computer and never shown again.</p>
     </>
   );
 }
