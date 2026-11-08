@@ -85,6 +85,11 @@ On a bill:
 
 - **Print** prints the bill without the browser's own date, title and address lines. It always prints on white, even in dark
   mode. If your browser still adds a header or footer, untick **Headers and footers** in its print window once.
+- **Record payment** saves money received, in full or in part, with the date it was received. A **receipt** is made at once
+  (numbered like `RCT/2026-27/0001`) and opens so you can send it to the client: **Send email** attaches the receipt as a PDF
+  (the client's saved email is filled in; you can type another), **Open WhatsApp** opens the chat with a message ready (download
+  the PDF and attach it). The receipt shows whether it was a *full* or *part* payment and how much is still due. Reopen any
+  receipt from **Receipt…** under the payment in the Payments list. Email needs the mail server set up under Settings → Email.
 - **Edit bill** lets you change the client, date, items and notes. The GST rate stays the one the bill was created with.
   The bill records who created it and who last edited it, and when.
 

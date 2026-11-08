@@ -86,6 +86,8 @@ export type BillState = "open" | "paid" | "credited" | "written_off" | "cancelle
 
 export interface Settlement {
   paid_paise: number;
+  /** Date of the latest payment that counts (bills list only). */
+  last_paid_on?: string | null;
   credited_paise: number;
   /** Let go when the client paid less by agreement. Only ever recorded at payment time, never on the bill itself. */
   discount_paise: number;
@@ -138,6 +140,8 @@ export type PaymentMethod = "cash" | "upi" | "bank_transfer" | "cheque" | "card"
 
 export interface Payment {
   id: number;
+  /** The acknowledgement receipt's number, e.g. RCT/2026-27/0001. */
+  receipt_no: string;
   amount_paise: number;
   paid_on: string;
   method: PaymentMethod;
@@ -172,7 +176,7 @@ export interface CreditNoteSummary {
 
 export interface HistoryEntry {
   id: number;
-  action: "created" | "edited" | "cancelled" | "payment_added" | "payment_voided" | "credit_note_issued";
+  action: "created" | "edited" | "cancelled" | "payment_added" | "payment_voided" | "credit_note_issued" | "discount_given" | "discount_voided" | "receipt_emailed";
   summary: string;
   before_data: unknown;
   changed_at: string;
@@ -235,6 +239,7 @@ export interface Bill extends Settlement {
   client_id: number;
   client_name: string;
   client_phone: string | null;
+  client_email: string | null;
   client_city: string | null;
   client_address: string | null;
   client_gstin: string | null;
@@ -245,4 +250,26 @@ export interface Bill extends Settlement {
   created_by_name: string;
   updated_by_name: string | null;
   items: BillItem[];
+}
+
+/** The acknowledgement receipt for one payment. */
+export interface Receipt {
+  id: number;
+  receipt_no: string;
+  paid_on: string;
+  amount_paise: number;
+  method: PaymentMethod;
+  reference: string | null;
+  voided_at: string | null;
+  bill_id: number;
+  bill_no: string;
+  bill_date: string;
+  client_name: string;
+  client_phone: string | null;
+  client_email: string | null;
+  bill_total_paise: number;
+  reduced_paise: number;
+  received_before_paise: number;
+  balance_after_paise: number;
+  kind: "full" | "part";
 }

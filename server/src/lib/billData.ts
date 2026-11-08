@@ -8,7 +8,7 @@ import { settle } from "./settlement.js";
 export const FY_START_SQL = `b.fy_start`;
 
 // Payments that count (a voided payment is kept for the record but ignored) and credit notes, summed per bill.
-export const PAID_JOIN = `LEFT JOIN (SELECT bill_id, SUM(amount_paise)::bigint AS paid FROM payments WHERE voided_at IS NULL GROUP BY bill_id) p ON p.bill_id = b.id`;
+export const PAID_JOIN = `LEFT JOIN (SELECT bill_id, SUM(amount_paise)::bigint AS paid, MAX(paid_on)::text AS last_paid_on FROM payments WHERE voided_at IS NULL GROUP BY bill_id) p ON p.bill_id = b.id`;
 export const CREDITED_JOIN = `LEFT JOIN (SELECT bill_id, SUM(total_paise)::bigint AS credited FROM credit_notes GROUP BY bill_id) cn ON cn.bill_id = b.id`;
 export const DISCOUNT_JOIN = `LEFT JOIN (SELECT bill_id, SUM(amount_paise)::bigint AS discounted FROM discounts WHERE voided_at IS NULL GROUP BY bill_id) d ON d.bill_id = b.id`;
 export const BALANCE_SQL = `(b.total_paise - COALESCE(cn.credited, 0) - COALESCE(p.paid, 0) - COALESCE(d.discounted, 0))`;
@@ -60,7 +60,7 @@ export function billFilterSql(f: BillFilters, likePattern: (s: string) => string
 export const BILL_LIST_COLUMNS = `
   b.id, b.bill_no, b.bill_date::text AS bill_date, b.due_date::text AS due_date, ${FY_START_SQL} AS fy_start,
   b.status, b.subtotal_paise, b.gst_rate_percent, b.gst_paise, b.reimbursement_paise, b.total_paise,
-  COALESCE(p.paid, 0)::bigint AS paid_paise, COALESCE(cn.credited, 0)::bigint AS credited_paise,
+  COALESCE(p.paid, 0)::bigint AS paid_paise, p.last_paid_on, COALESCE(cn.credited, 0)::bigint AS credited_paise,
   COALESCE(d.discounted, 0)::bigint AS discount_paise,
   b.client_id, c.name AS client_name, c.phone AS client_phone, c.city AS client_city,
   c.gstin AS client_gstin, c.is_deleted AS client_deleted, b.created_at, cu.full_name AS created_by_name,
@@ -83,7 +83,7 @@ export async function getBill(q: Queryable, id: number) {
               b.notes, b.status, b.cancelled_at, b.cancel_reason, xu.full_name AS cancelled_by_name,
               b.subtotal_paise, b.gst_rate_percent, b.gst_paise, b.reimbursement_paise, b.total_paise,
               b.client_id, c.name AS client_name, c.group_id, (SELECT g.name FROM client_groups g WHERE g.id = c.group_id) AS group_name, c.phone AS client_phone, c.city AS client_city,
-              c.address AS client_address, c.gstin AS client_gstin, c.pan AS client_pan, c.file_no AS client_file_no,
+              c.address AS client_address, c.gstin AS client_gstin, c.pan AS client_pan, c.file_no AS client_file_no, c.email AS client_email,
               b.created_at, b.updated_at,
               cu.full_name AS created_by_name, uu.full_name AS updated_by_name
        FROM bills b
@@ -107,7 +107,7 @@ export async function getBill(q: Queryable, id: number) {
 
   const payments = (
     await q.query(
-      `SELECT p.id, p.amount_paise, p.paid_on::text AS paid_on, p.method, p.reference, p.notes, p.created_at,
+      `SELECT p.id, p.receipt_no, p.amount_paise, p.paid_on::text AS paid_on, p.method, p.reference, p.notes, p.created_at,
               u.full_name AS created_by_name, p.voided_at, vu.full_name AS voided_by_name, p.void_reason
        FROM payments p
        JOIN users u ON u.id = p.created_by

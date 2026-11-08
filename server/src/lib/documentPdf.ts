@@ -6,6 +6,7 @@ import type { Settings } from "../routes/settings.js";
 import { METHOD_LABELS, dueLine, fyLongLabel, jurisdictionLine, money, paymentLines, prettyDate, prettyTimestamp, type PaymentMethod } from "./format.js";
 import type { FeesReport } from "./feesReport.js";
 import type { Ledger } from "./ledger.js";
+import { receivedHow, type Receipt } from "./receipt.js";
 import { amountInWords } from "./words.js";
 
 /**
@@ -466,7 +467,7 @@ export function renderBillPdf(bill: any, org: Settings, logo: Logo | null): Prom
 
     const payments = (bill.payments ?? []).filter((p: any) => !p.voided_at);
     if (payments.length) {
-      section(pen, "Payments received", payments.map((p: any) => [prettyDate(p.paid_on), `${METHOD_LABELS[p.method as PaymentMethod] ?? p.method}${p.reference ? ` - ${p.reference}` : ""}`, money(p.amount_paise)]), [90, CONTENT_WIDTH - 90 - 110, 110], ["left", "left", "right"]);
+      section(pen, "Payments received", payments.map((p: any) => [prettyDate(p.paid_on), p.receipt_no ?? "", `${METHOD_LABELS[p.method as PaymentMethod] ?? p.method}${p.reference ? ` - ${p.reference}` : ""}`, money(p.amount_paise)]), [80, 115, CONTENT_WIDTH - 80 - 115 - 100, 100], ["left", "left", "left", "right"]);
     }
     if ((bill.credit_notes ?? []).length) {
       section(pen, "Credit notes", bill.credit_notes.map((c: any) => [c.cn_no, prettyDate(c.cn_date), money(c.total_paise)]), [150, CONTENT_WIDTH - 150 - 110, 110], ["left", "left", "right"]);
@@ -499,6 +500,54 @@ export function renderCreditNotePdf(cn: any, org: Settings, logo: Logo | null): 
     remarks(pen, [`Reason: ${cn.reason}`, `This credit note reduces the amount due on bill ${cn.bill_no}.`]);
     signOff(pen, org);
     return { footer: cn.cn_no, stamp: null, note: jurisdictionLine(org) };
+  });
+}
+
+/**
+ * The acknowledgement receipt for one payment (full or part): who paid, how much (in figures and words), how and when,
+ * against which bill, and what is still due on that bill after it. A voided payment's receipt is stamped VOID.
+ */
+export function renderReceiptPdf(r: Receipt, org: Settings, logo: Logo | null): Promise<Buffer> {
+  const voided = !!r.voided_at;
+  return build(`Receipt ${r.receipt_no}`, org.org_name, (pen) => {
+    letterhead(pen, org, logo);
+    partyAndTitle(
+      pen,
+      r,
+      "PAYMENT RECEIPT",
+      [
+        ["Receipt No.", r.receipt_no],
+        ["Date received", prettyDate(r.paid_on)],
+        ["Against bill", r.bill_no],
+        ...(r.client_file_no ? ([["File No.", r.client_file_no]] as [string, string][]) : []),
+      ],
+      voided ? { text: "VOID", color: RED } : r.kind === "full" ? { text: "FULL PAYMENT", color: GREEN } : { text: "PART PAYMENT", color: INK },
+    );
+
+    const how = receivedHow(r.method, METHOD_LABELS[r.method as PaymentMethod] ?? r.method, r.reference);
+    pen.paragraph(
+      `Received with thanks from ${r.client_name} the sum of ${money(r.amount_paise)} (${amountInWords(r.amount_paise)}) ${how} on ${prettyDate(r.paid_on)}, towards bill No. ${r.bill_no} dated ${prettyDate(r.bill_date)}.`,
+      PAGE.margin, CONTENT_WIDTH, { size: 11, gap: 14 },
+    );
+
+    const rows: Parameters<typeof totals>[1] = [{ label: `Bill ${r.bill_no}`, value: money(r.bill_total_paise) }];
+    if (r.reduced_paise > 0) rows.push({ label: "Credit notes / discount", value: `- ${money(r.reduced_paise)}` });
+    if (r.received_before_paise > 0) rows.push({ label: "Received earlier", value: `- ${money(r.received_before_paise)}` });
+    rows.push({ label: "Received now (this receipt)", value: `- ${money(r.amount_paise)}`, color: GREEN });
+    rows.push({ label: "Balance due on the bill", value: money(r.balance_after_paise), strong: true });
+    totals(pen, rows);
+
+    if (voided) {
+      pen.ensure(40);
+      pen.paragraph(`This receipt is void: the payment was cancelled on ${prettyTimestamp(r.voided_at)}${r.void_reason ? ` (${r.void_reason})` : ""}.`, PAGE.margin, CONTENT_WIDTH, { size: 9.5, color: RED, gap: 8 });
+    }
+    remarks(pen, [
+      voided ? "" : r.kind === "full" ? `Bill ${r.bill_no} is fully paid. Thank you.` : `Part payment. ${money(r.balance_after_paise)} is still due on bill ${r.bill_no}.`,
+      r.method === "cheque" ? "Subject to realisation of the cheque." : "",
+      r.notes ?? "",
+    ]);
+    signOff(pen, org);
+    return { footer: r.receipt_no, stamp: voided ? "VOID" : null, note: jurisdictionLine(org) };
   });
 }
 
@@ -705,6 +754,8 @@ export function renderFeesReportPdf(r: FeesReport, org: Settings, logo: Logo | n
       ["  of which reimbursed", money(s.reimbursed_paise)],
       ["Credit notes and discounts", money(s.credited_paise + s.discount_paise)],
       ["Outstanding", money(s.outstanding_paise)],
+      ["Receipts in period", String(s.receipts)],
+      ["Collected in period", money(s.collected_paise)],
     ], 5);
 
     if (r.months.length) {
@@ -712,10 +763,11 @@ export function renderFeesReportPdf(r: FeesReport, org: Settings, logo: Logo | n
       pen.y += 13;
       grid(pen, [
         { label: "Month", width: 90 }, { label: "Bills", width: 50, align: "right" }, { label: "Fees (₹)", width: 100, align: "right" },
-        { label: "GST (₹)", width: 90, align: "right" }, { label: "Paid on behalf (₹)", width: 110, align: "right" }, { label: "Received (₹)", width: 100, align: "right" },
+        { label: "GST (₹)", width: 90, align: "right" }, { label: "Paid on behalf (₹)", width: 110, align: "right" }, { label: "Received on these bills (₹)", width: 120, align: "right" },
+        { label: "Collected by receipt date (₹)", width: 130, align: "right" },
       ], [
-        ...r.months.map((m) => ({ cells: [m.month, String(m.bills), money(m.fees_paise), money(m.gst_paise), money(m.reimbursement_paise), money(m.received_paise)] })),
-        { cells: ["Total", String(s.bills), money(s.fees_paise), money(s.gst_paise), money(s.reimbursement_paise), money(s.received_paise)], bold: true, rule: true },
+        ...r.months.map((m) => ({ cells: [m.month, String(m.bills), money(m.fees_paise), money(m.gst_paise), money(m.reimbursement_paise), money(m.received_paise), money(m.collected_paise)] })),
+        { cells: ["Total", String(s.bills), money(s.fees_paise), money(s.gst_paise), money(s.reimbursement_paise), money(s.received_paise), money(s.collected_paise)], bold: true, rule: true },
       ], 8.5);
     }
 
@@ -725,18 +777,30 @@ export function renderFeesReportPdf(r: FeesReport, org: Settings, logo: Logo | n
     grid(pen, [
       { label: "Bill no.", width: 70 }, { label: "Date", width: 58 }, { label: "Client", width: 130, wrap: true }, { label: "Group", width: 80, wrap: true },
       { label: "Fees", width: 66, align: "right" }, { label: "GST", width: 56, align: "right" }, { label: "On behalf", width: 62, align: "right" },
-      { label: "Total", width: 68, align: "right" }, { label: "Received", width: 68, align: "right" }, { label: "Cr./disc.", width: 58, align: "right" },
+      { label: "Total", width: 68, align: "right" }, { label: "Received", width: 68, align: "right" }, { label: "Last paid", width: 58 }, { label: "Cr./disc.", width: 58, align: "right" },
       { label: "Balance", width: 66, align: "right" }, { label: "Status", width: 58 },
     ], [
       ...r.rows.map((b) => ({
         muted: b.cancelled,
-        cells: [b.bill_no, prettyDate(b.bill_date), b.client_name, b.group_name ?? "", money(b.fees_paise), money(b.gst_paise), b.reimbursement_paise ? money(b.reimbursement_paise) : "",
-          money(b.total_paise), money(b.received_paise), b.reduced_paise ? money(b.reduced_paise) : "", b.cancelled ? "" : money(b.balance_paise), b.status],
+        cells: [b.bill_no, dmy(b.bill_date), b.client_name, b.group_name ?? "", money(b.fees_paise), money(b.gst_paise), b.reimbursement_paise ? money(b.reimbursement_paise) : "",
+          money(b.total_paise), money(b.received_paise), b.last_paid_on ? dmy(b.last_paid_on) : "", b.reduced_paise ? money(b.reduced_paise) : "", b.cancelled ? "" : money(b.balance_paise), b.status],
       })),
-      ...(r.rows.length ? [] : [{ cells: ["No bills in this period", "", "", "", "", "", "", "", "", "", "", ""], muted: true }]),
-      { cells: ["Total", "", "", "", money(s.fees_paise), money(s.gst_paise), money(s.reimbursement_paise), money(s.total_paise), money(s.received_paise), money(s.credited_paise + s.discount_paise), money(s.outstanding_paise), ""], bold: true, rule: true },
+      ...(r.rows.length ? [] : [{ cells: ["No bills in this period", "", "", "", "", "", "", "", "", "", "", "", ""], muted: true }]),
+      { cells: ["Total", "", "", "", money(s.fees_paise), money(s.gst_paise), money(s.reimbursement_paise), money(s.total_paise), money(s.received_paise), "", money(s.credited_paise + s.discount_paise), money(s.outstanding_paise), ""], bold: true, rule: true },
     ], 7.5);
-    pen.paragraph("Fees are the firm's income. GST and amounts paid on clients' behalf are shown separately and are not income. Cancelled bills are listed but not counted in any total.", PAGE.margin, CONTENT_WIDTH, { size: 8, color: MUTED });
+
+    pen.ensure(60);
+    pen.draw("RECEIPTS (MONEY RECEIVED IN THE PERIOD, BY DATE RECEIVED)", PAGE.margin, pen.y, { size: 8, bold: true, color: MUTED });
+    pen.y += 13;
+    grid(pen, [
+      { label: "Receipt no.", width: 92 }, { label: "Date received", width: 70 }, { label: "Client", width: 160, wrap: true }, { label: "Bill no.", width: 80 },
+      { label: "How paid", width: 80 }, { label: "Reference", width: 120, wrap: true }, { label: "Amount (₹)", width: 80, align: "right" },
+    ], [
+      ...r.receipts.map((x) => ({ cells: [x.receipt_no, dmy(x.paid_on), x.client_name, x.bill_no, x.method, x.reference ?? "", money(x.amount_paise)] })),
+      ...(r.receipts.length ? [] : [{ cells: ["No receipts in this period", "", "", "", "", "", ""], muted: true }]),
+      { cells: ["Total", "", "", "", "", "", money(s.collected_paise)], bold: true, rule: true },
+    ], 7.5);
+    pen.paragraph("Fees are the firm's income. GST and amounts paid on clients' behalf are shown separately and are not income. Cancelled bills are listed but not counted in any total. Receipts are listed by the date the money was received, whatever the date of the bill.", PAGE.margin, CONTENT_WIDTH, { size: 8, color: MUTED });
     return { footer: `Fees report ${prettyDate(r.from)} to ${prettyDate(r.to)}`, stamp: null };
   }, "landscape");
 }

@@ -113,6 +113,20 @@ Body for create and replace:
 - `bill_no` is assigned on create (`INV-000001`, ...) and never changes.
 - Totals are returned as `subtotal_paise`, `gst_paise`, `total_paise`, and each line has `line_total_paise`.
 
+## Payments and receipts
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| POST | `/api/bills/:id/payments` | `{ amount_paise, paid_on?, method, reference?, notes?, settle_rest?, settle_as?, discount_reason? }`. Returns the bill; the new payment carries its `receipt_no` |
+| POST | `/api/payments/:id/void` | Admin. `{ reason }`. The payment and its receipt number are kept |
+| GET | `/api/payments/:id/receipt` | The receipt: `receipt_no`, `paid_on`, `amount_paise`, `method`, `reference`, bill and client details, `reduced_paise` (credit notes and discounts up to the payment date), `received_before_paise`, `balance_after_paise`, `kind` (`full` or `part`), `voided_at` |
+| GET | `/api/payments/:id/receipt.pdf` | The receipt as a PDF (`?inline=1` to view in the browser) |
+| POST | `/api/payments/:id/receipt/email` | `{ to? }` (default: the client's email). Emails the PDF through the mail server in Settings. `400` when there is no address, `409` for a voided payment or when email is not set up |
+
+- Receipt numbers run per financial year of `paid_on`, with no gaps: `RCT/2026-27/0001`, `RCT/2026-27/0002`, ...
+- `GET /api/reports/fees` also returns `receipts` (every payment dated in the range, oldest first), `summary.collected_paise`
+  and `summary.receipts`, `collected_paise` per month, and `last_paid_on` on each bill row. Bill lists return `last_paid_on`.
+
 ## Settings
 
 | Method and path | Who | Description |

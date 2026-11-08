@@ -4,7 +4,7 @@ import { HttpError } from "./errors.js";
 
 /**
  * Sends email through the firm's own mail server (SMTP), set up by an admin under Settings → Email.
- * Used for password reset links. Works with Gmail (smtp.gmail.com, port 587, an "app password"), Outlook / Microsoft
+ * Used for password reset links and for emailing payment receipts to clients. Works with Gmail (smtp.gmail.com, port 587, an "app password"), Outlook / Microsoft
  * 365 (smtp.office365.com, 587), Zoho, or any provider that gives SMTP details.
  */
 
@@ -25,6 +25,8 @@ export interface Mail {
   subject: string;
   text: string;
   html: string;
+  /** Files sent with the email, e.g. a receipt as a PDF. */
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 
 export interface Mailer {
@@ -64,7 +66,7 @@ export function createSmtpMailer(db: Db): Mailer {
         greetingTimeout: 15_000,
         socketTimeout: 20_000,
       });
-      await transport.sendMail({ from: s.from, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+      await transport.sendMail({ from: s.from, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html, attachments: mail.attachments });
     },
   };
 }

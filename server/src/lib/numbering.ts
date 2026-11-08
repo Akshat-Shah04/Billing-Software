@@ -1,12 +1,13 @@
 import type { Queryable } from "../db/index.js";
 import { fyLabel, fyStartOf } from "./fy.js";
 
-export type NumberKind = "INV" | "CN";
+export type NumberKind = "INV" | "CN" | "RCT";
 
 /**
  * The next number in a series: consecutive, with no gaps, restarting at 1 each financial year.
  *   bills:        2026-27/0001, 2026-27/0002, ...   (series "INV:2026")
  *   credit notes: CN/2026-27/0001, ...              (series "CN:2026")
+ *   receipts:     RCT/2026-27/0001, ...             (series "RCT:2026", by the date the money was received)
  * (Both are well under the 16 characters Indian GST allows for an invoice number.)
  *
  * IMPORTANT: call this inside the same transaction that saves the document. The counter then rolls back with a
@@ -15,7 +16,7 @@ export type NumberKind = "INV" | "CN";
  *
  * `year` picks the series: a financial year (2026 = FY 2026-27), or a "YYYY-MM-DD" date whose year is used.
  * Bills pass the financial year chosen for them, so an old bill takes the next number of THAT year's series.
- * Credit notes pass their own date.
+ * Credit notes and receipts pass their own date.
  */
 export async function nextDocumentNumber(q: Queryable, kind: NumberKind, year: number | string): Promise<string> {
   const fy = typeof year === "number" ? year : fyStartOf(year);
@@ -26,5 +27,5 @@ export async function nextDocumentNumber(q: Queryable, kind: NumberKind, year: n
     [`${kind}:${fy}`],
   );
   const n = String(rows[0].last_value).padStart(4, "0");
-  return kind === "INV" ? `${fyLabel(fy)}/${n}` : `CN/${fyLabel(fy)}/${n}`;
+  return kind === "INV" ? `${fyLabel(fy)}/${n}` : `${kind}/${fyLabel(fy)}/${n}`;
 }

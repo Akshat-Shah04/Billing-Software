@@ -226,6 +226,7 @@ export default function Bills() {
                   <td className="c-status nowrap">
                     <StatusBadge bill={b} />
                     {b.due_date && b.state === "open" && <div className="muted tiny">Due {formatDate(b.due_date)}</div>}
+                    {b.last_paid_on && <div className="muted tiny">Last paid {formatDate(b.last_paid_on)}</div>}
                   </td>
                   <td className="c-total num">
                     {formatRupees(b.total_paise - b.credited_paise - b.discount_paise)}
