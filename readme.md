@@ -153,13 +153,20 @@ The wizard's own pages ([before](installer/info-before.txt), [after](installer/i
 
 ### Publishing a new installer (for the developer)
 
+Either push a version tag from your PC:
+
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
-The workflow in `.github/workflows/release.yml` runs the tests, builds the app, bundles Node.js and the
-service wrapper, compiles the installer with Inno Setup and attaches it to a GitHub Release.
+or create the release on GitHub's website: **Releases → Draft a new release**, choose the tag (e.g. `v0.3.1`,
+"Create new tag on publish"), target `main`, write the notes and **Publish release**.
+
+Either way, the workflow in `.github/workflows/release.yml` runs the tests, builds the app, bundles Node.js and the
+service wrapper, compiles the installer with Inno Setup and attaches `BillingSoftware-Setup-<version>.exe` and its
+`.sha256` to the release (a release made on the website keeps its title and notes). To rebuild a release's installer,
+use **Actions → Release installer → Run workflow** and type its tag.
 To build locally, run `installer\build.ps1`, then compile `installer\billing.iss` with Inno Setup 6.3+.
 The icon and wizard pictures in `installer/assets` are drawn by `installer\make-art.ps1` (run it again only if the artwork changes).
 

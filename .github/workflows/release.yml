@@ -1,21 +1,52 @@
 name: Release installer
 
-# Push a tag like v0.2.0 to build the Windows installer and attach it to a GitHub Release:
-#   git tag v0.2.0 && git push origin v0.2.0
-# You can also run it by hand from the Actions tab to get the installer as a build artifact.
+# Builds the Windows installer and attaches it (with its .sha256) to the GitHub Release for a version tag.
+# Three ways to start it:
+#   1. From your PC:  git tag v0.3.1  then  git push origin v0.3.1
+#      The release is created here, with notes generated from the merged pull requests.
+#   2. On GitHub's website: Releases -> Draft a new release -> choose tag "v0.3.1" -> "Create new tag on publish",
+#      target "main" -> write the notes -> Publish release.
+#      Publishing creates the tag, which starts this workflow; the installer is attached to YOUR release,
+#      and your title and notes are left as they are.
+#   3. Actions -> Release installer -> Run workflow, with a tag such as v0.3.1: builds that tag again and attaches
+#      (or replaces) the installer on its release. Left empty, it only builds a test installer (0.0.0-dev) as a
+#      download on the run, without touching any release.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to build and attach to its release, e.g. v0.3.1 (leave empty for a test build only)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
+
+# One build per tag at a time (pushing a tag and re-running it by hand must not upload over each other).
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  # The tag being released: the pushed tag, or the one typed in "Run workflow" (empty = test build only).
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
 
 jobs:
   windows-installer:
     runs-on: windows-latest
     steps:
+      - name: Check the tag
+        if: env.RELEASE_TAG != ''
+        shell: pwsh
+        run: |
+          if ("$env:RELEASE_TAG" -notmatch '^v\d+\.\d+\.\d+$') { throw "The tag must look like v0.3.1 (got '$env:RELEASE_TAG')" }
+
       - uses: actions/checkout@v4
+        with:
+          # Build exactly the tagged code (for a run started by hand with a tag, too).
+          ref: ${{ env.RELEASE_TAG != '' && format('refs/tags/{0}', env.RELEASE_TAG) || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -31,7 +62,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") } else { $v = "0.0.0-dev" }
+          if ("$env:RELEASE_TAG") { $v = "$env:RELEASE_TAG".TrimStart("v") } else { $v = "0.0.0-dev" }
           "value=$v" >> $env:GITHUB_OUTPUT
 
       - name: Build the app and gather Node.js and the service wrapper
@@ -60,10 +91,21 @@ jobs:
           name: BillingSoftware-Setup
           path: installer/output/*
 
+      # If a release for the tag already exists (made on GitHub's website, or an earlier run), the files are attached
+      # to it and replace any old copies; its title and notes are not changed. Otherwise the release is created.
       - name: Publish the GitHub Release
-        if: github.ref_type == 'tag'
+        if: env.RELEASE_TAG != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" (Get-ChildItem installer\output\* | ForEach-Object FullName) --title "Billing Software ${{ github.ref_name }}" --generate-notes
+          $files = Get-ChildItem installer\output\* | ForEach-Object FullName
+          gh release view "$env:RELEASE_TAG" --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:RELEASE_TAG already exists: attaching the installer to it"
+            gh release upload "$env:RELEASE_TAG" $files --clobber
+          } else {
+            Write-Host "Creating release $env:RELEASE_TAG"
+            gh release create "$env:RELEASE_TAG" $files --title "Billing Software $env:RELEASE_TAG" --generate-notes --verify-tag
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the release failed" }
