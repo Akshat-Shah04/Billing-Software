@@ -5,7 +5,9 @@ import BillForm from "./pages/BillForm";
 import BillView from "./pages/BillView";
 import Bills from "./pages/Bills";
 import Clients from "./pages/Clients";
+import { ForgotPassword, ResetPassword } from "./pages/ForgotPassword";
 import Login from "./pages/Login";
+import Reports from "./pages/Reports";
 import Services from "./pages/Services";
 import SettingsPage from "./pages/SettingsPage";
 import Staff from "./pages/Staff";
@@ -13,7 +15,16 @@ import Staff from "./pages/Staff";
 export default function App() {
   const { user, loading } = useAuth();
   if (loading) return <p className="muted" style={{ padding: "2rem" }}>Loading…</p>;
-  if (!user) return <Login />;
+  if (!user) {
+    // Logged out: the login page, plus the two "forgot password" pages (the reset link from the email opens the second).
+    return (
+      <Routes>
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="*" element={<Login />} />
+      </Routes>
+    );
+  }
 
   const isAdmin = user.role === "admin";
   return (
@@ -25,6 +36,7 @@ export default function App() {
         <Route path="/bills/:id/edit" element={<BillForm />} />
         <Route path="/clients" element={<Clients />} />
         <Route path="/services" element={<Services />} />
+        {isAdmin && <Route path="/reports" element={<Reports />} />}
         {isAdmin && <Route path="/staff" element={<Staff />} />}
         {isAdmin && <Route path="/settings" element={<SettingsPage />} />}
         <Route path="*" element={<Navigate to="/bills" replace />} />

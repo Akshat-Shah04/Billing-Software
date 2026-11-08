@@ -168,7 +168,7 @@ export default function BillView() {
                 </tr>
               </thead>
               <tbody>
-                {b.items.map((i, n) => (
+                {b.items.filter((i) => i.kind !== "reimbursement").map((i, n) => (
                   <tr key={i.id}>
                     <td>{n + 1}</td>
                     <td>
@@ -190,21 +190,57 @@ export default function BillView() {
             </table>
           </div>
 
+          {b.items.some((i) => i.kind === "reimbursement") && (
+            <div className="table-wrap" style={{ marginTop: "1.25rem" }}>
+              <table className="invoice-items">
+                <thead>
+                  <tr>
+                    <th style={{ width: "2.5rem" }}>Sr.</th>
+                    <th>Paid on your behalf (no GST)</th>
+                    <th className="num">Amount (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {b.items
+                    .filter((i) => i.kind === "reimbursement")
+                    .map((i, n) => (
+                      <tr key={i.id}>
+                        <td>{n + 1}</td>
+                        <td>
+                          <div className="item-title">{i.description}</div>
+                          {i.details && <div className="item-text">{i.details}</div>}
+                        </td>
+                        <td className="num">
+                          <strong>{formatRupees(i.line_total_paise)}</strong>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <div className="totals" style={{ marginTop: "1rem" }}>
+            {(b.gst_rate_percent > 0 || b.reimbursement_paise > 0) && (
+              <div>
+                <span>Fees</span>
+                <span>{formatRupees(b.subtotal_paise)}</span>
+              </div>
+            )}
             {b.gst_rate_percent > 0 && (
-              <>
-                <div>
-                  <span>Subtotal</span>
-                  <span>{formatRupees(b.subtotal_paise)}</span>
-                </div>
-                <div>
-                  <span>GST @ {b.gst_rate_percent}%</span>
-                  <span>{formatRupees(b.gst_paise)}</span>
-                </div>
-              </>
+              <div>
+                <span>GST @ {b.gst_rate_percent}% (on fees)</span>
+                <span>{formatRupees(b.gst_paise)}</span>
+              </div>
+            )}
+            {b.reimbursement_paise > 0 && (
+              <div>
+                <span>Paid on your behalf</span>
+                <span>{formatRupees(b.reimbursement_paise)}</span>
+              </div>
             )}
             <div className="grand">
-              <span>Total</span>
+              <span>{b.reimbursement_paise > 0 ? "Total payable" : "Total"}</span>
               <span>{formatRupees(b.total_paise)}</span>
             </div>
           </div>

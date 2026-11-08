@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { billSums, getCreditNote } from "../lib/billData.js";
+import { billForSettling, feesStillDue } from "../lib/shortfall.js";
 import { assertReasonableTotal, creditLineSchema } from "../lib/billInput.js";
 import type { ClientFiles } from "../lib/clientFiles.js";
 import { HttpError } from "../lib/errors.js";
@@ -51,6 +52,11 @@ export function creditNoteRoutes(db: Db, files: ClientFiles): Router {
       const sums = await billSums(q, billId);
       const balance = bill.total_paise - sums.credited - sums.paid - sums.discounted;
       if (balance <= 0) throw new HttpError(400, "This bill has nothing left to credit. If the client has already paid, void the payment first.");
+      // A credit note reduces fees, never an amount the firm paid on the client's behalf.
+      const feesDue = await feesStillDue(q, await billForSettling(q, billId));
+      if (totals.total_paise > feesDue && feesDue < balance) {
+        throw new HttpError(400, `A credit note can reduce at most the fees still unpaid (${rupeesText(feesDue)}). Amounts paid on the client's behalf can't be credited.`);
+      }
       if (totals.total_paise > balance) {
         throw new HttpError(400, `A credit note can be for at most the amount still unpaid on this bill (${rupeesText(balance)}). If the client has already paid, void the payment first.`);
       }

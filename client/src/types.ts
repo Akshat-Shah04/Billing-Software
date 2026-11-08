@@ -4,6 +4,16 @@ export interface User {
   full_name: string;
   role: "admin" | "staff";
   is_active?: boolean;
+  /** Where an administrator's "forgot password" link is sent. */
+  email?: string | null;
+}
+
+/** A set of related clients handled together, e.g. a family. */
+export interface ClientGroup {
+  id: number;
+  name: string;
+  notes: string | null;
+  member_count: number;
 }
 
 export interface Page<T> {
@@ -25,6 +35,8 @@ export interface Client {
   referred_by: string | null;
   /** The firm's file reference for this client, printed on bills as "File No.". */
   file_no: string | null;
+  group_id: number | null;
+  group_name: string | null;
   folder_name: string | null;
   is_deleted: boolean;
 }
@@ -98,6 +110,9 @@ export interface BillSummary extends Settlement {
   client_deleted: boolean;
   /** The bill's lines, in order, for the Items column. */
   items: { description: string; fy_start: number }[];
+  reimbursement_paise: number;
+  group_id: number | null;
+  group_name: string | null;
 }
 
 export interface FinancialYear {
@@ -115,6 +130,8 @@ export interface BillItem {
   line_total_paise: number;
   /** The financial year this line is for (2024 = FY 2024-25), shown on the bill. */
   fy_start: number;
+  /** "fee" or "reimbursement" (paid on the client's behalf: no GST, not income). */
+  kind: "fee" | "reimbursement";
 }
 
 export type PaymentMethod = "cash" | "upi" | "bank_transfer" | "cheque" | "card" | "other";
@@ -164,6 +181,13 @@ export interface HistoryEntry {
 
 export interface BillsTotals {
   billed_paise: number;
+  /** Fees only (the firm's income), before GST. */
+  fees_paise: number;
+  gst_paise: number;
+  /** Paid on clients' behalf (not income). */
+  reimbursement_paise: number;
+  /** Part of what was received that paid back amounts paid on clients' behalf. */
+  reimbursed_paise: number;
   credited_paise: number;
   discount_paise: number;
   collected_paise: number;
@@ -197,6 +221,9 @@ export interface Bill extends Settlement {
   cancelled_by_name: string | null;
   /** Once a payment or credit note is attached, the client, date and items can no longer be edited. */
   amounts_locked: boolean;
+  /** Paid on the client's behalf (no GST, not income); total = subtotal (fees) + GST + this. */
+  reimbursement_paise: number;
+  group_name: string | null;
   payments: Payment[];
   credit_notes: CreditNoteSummary[];
   discounts: Discount[];

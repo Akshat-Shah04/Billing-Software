@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, downloadFile, qs } from "../api";
 import Icon from "../components/Icon";
+import LedgerSheet, { type LedgerTarget } from "../components/LedgerSheet";
 import Message from "../components/Message";
 import PageHeader from "../components/PageHeader";
 import Pager from "../components/Pager";
 import Sheet from "../components/Sheet";
 import { useDebounced, useLoad } from "../hooks";
-import type { Client, Page } from "../types";
+import type { Client, ClientGroup, Page } from "../types";
 
 const EMPTY = { name: "", phone: "", email: "", city: "", address: "", pan: "", gstin: "", referred_by: "", file_no: "" };
 type Form = typeof EMPTY;
@@ -44,12 +45,18 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [groupFilter, setGroupFilter] = useState("");
   const q = useDebounced(search);
 
   const { data, error, loading, reload } = useLoad(
-    () => api<Page<Client>>(`/clients${qs({ q, page, include_deleted: showDeleted })}`),
-    `${q}|${page}|${showDeleted}`,
+    () => api<Page<Client>>(`/clients${qs({ q, page, include_deleted: showDeleted, group_id: groupFilter })}`),
+    `${q}|${page}|${showDeleted}|${groupFilter}`,
   );
+  const [groupsTick, setGroupsTick] = useState(0);
+  const groups = useLoad(() => api<{ items: ClientGroup[] }>("/client-groups"), `groups|${groupsTick}`);
+  const [ledgerFor, setLedgerFor] = useState<LedgerTarget | null>(null);
+  const [managingGroups, setManagingGroups] = useState(false);
+  const [formGroup, setFormGroup] = useState("");
 
   // `editing`: null = sheet closed, "new" = adding, otherwise the client being edited
   const [editing, setEditing] = useState<Client | "new" | null>(null);
@@ -62,6 +69,7 @@ export default function Clients() {
   function open(c: Client | "new") {
     setEditing(c);
     setForm(c === "new" ? EMPTY : fieldsOf(c));
+    setFormGroup(c === "new" ? groupFilter : c.group_id ? String(c.group_id) : "");
     setFormError("");
   }
 
@@ -69,8 +77,10 @@ export default function Clients() {
     setSaving(true);
     setFormError("");
     try {
-      if (editing === "new") await api("/clients", { method: "POST", body: form });
-      else if (editing) await api(`/clients/${editing.id}`, { method: "PUT", body: form });
+      const body = { ...form, group_id: formGroup ? Number(formGroup) : null };
+      if (editing === "new") await api("/clients", { method: "POST", body });
+      else if (editing) await api(`/clients/${editing.id}`, { method: "PUT", body });
+      setGroupsTick((t) => t + 1); // member counts
       setNotice(editing === "new" ? `${form.name.trim()} added.` : `${form.name.trim()} saved.`);
       setEditing(null);
       reload();
@@ -103,6 +113,10 @@ export default function Clients() {
   return (
     <>
       <PageHeader title="Clients" subtitle={data ? `${data.total} ${data.total === 1 ? "client" : "clients"}${showDeleted ? ", including deleted" : ""}` : undefined}>
+        <button onClick={() => setManagingGroups(true)}>
+          <Icon name="clients" />
+          Groups
+        </button>
         <button className="primary" onClick={() => open("new")}>
           <Icon name="plus" />
           Add client
@@ -127,6 +141,27 @@ export default function Clients() {
               }}
             />
           </div>
+          <select
+            aria-label="Group"
+            value={groupFilter}
+            onChange={(e) => {
+              setGroupFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All clients</option>
+            {groups.data?.items.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name} ({g.member_count})
+              </option>
+            ))}
+          </select>
+          {groupFilter && (
+            <button className="tinted" onClick={() => setLedgerFor({ kind: "group", id: Number(groupFilter), name: groups.data?.items.find((g) => String(g.id) === groupFilter)?.name ?? "Group" })}>
+              <Icon name="pdf" />
+              Group ledger
+            </button>
+          )}
           <label className="check">
             <input
               type="checkbox"
@@ -156,6 +191,13 @@ export default function Clients() {
                 <tr key={c.id} className={c.is_deleted ? "dim" : ""}>
                   <td>
                     <strong style={{ fontWeight: 600 }}>{c.name}</strong> {c.is_deleted && <span className="badge neutral">Deleted</span>}
+                    {c.group_name && (
+                      <div>
+                        <button className="link tiny" style={{ padding: 0, minHeight: 0 }} onClick={() => setGroupFilter(String(c.group_id))} title="Show everyone in this group">
+                          {c.group_name}
+                        </button>
+                      </div>
+                    )}
                     {(c.file_no || c.email) && <div className="muted tiny">{[c.file_no && `File ${c.file_no}`, c.email].filter(Boolean).join(" · ")}</div>}
                   </td>
                   <td className="nowrap">{c.phone}</td>
@@ -166,8 +208,11 @@ export default function Clients() {
                     <Link className="link-action" to={`/bills?client_id=${c.id}`}>
                       Bills
                     </Link>
+                    <button className="link" onClick={() => setLedgerFor({ kind: "client", id: c.id, name: c.name })} title="Ledger account for a period, as a PDF to send to the client">
+                      Ledger
+                    </button>
                     <button className="link" onClick={() => statement(c)} title="Download a statement of bills, payments and credit notes (CSV)">
-                      Statement
+                      CSV
                     </button>
                     {c.is_deleted ? (
                       <button className="link" onClick={() => act(() => api(`/clients/${c.id}/restore`, { method: "POST" }), `${c.name} restored.`)}>
@@ -237,11 +282,140 @@ export default function Clients() {
             </div>
           ))}
         </div>
+        <div className="field" style={{ marginTop: "0.85rem", maxWidth: 360 }}>
+          <label htmlFor="c-group">Group (family)</label>
+          <select id="c-group" value={formGroup} onChange={(e) => setFormGroup(e.target.value)}>
+            <option value="">No group</option>
+            {groups.data?.items.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          <div className="hint">For family members and HUFs handled together. Add groups with the Groups button.</div>
+        </div>
         <div className="field" style={{ marginTop: "0.85rem" }}>
           <label htmlFor="c-address">Address</label>
           <textarea id="c-address" rows={2} maxLength={LIMITS.address} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
         </div>
       </Sheet>
+
+      <LedgerSheet target={ledgerFor} onClose={() => setLedgerFor(null)} />
+      <GroupsSheet
+        open={managingGroups}
+        groups={groups.data?.items ?? []}
+        onClose={() => setManagingGroups(false)}
+        onChanged={() => {
+          setGroupsTick((t) => t + 1);
+          reload();
+        }}
+        onShow={(g) => {
+          setManagingGroups(false);
+          setGroupFilter(String(g.id));
+          setPage(1);
+        }}
+        onLedger={(g) => {
+          setManagingGroups(false);
+          setLedgerFor({ kind: "group", id: g.id, name: g.name });
+        }}
+      />
     </>
+  );
+}
+
+/** Add, rename and remove groups (e.g. families). Removing a group never touches its clients or their bills. */
+function GroupsSheet({ open, groups, onClose, onChanged, onShow, onLedger }: {
+  open: boolean;
+  groups: ClientGroup[];
+  onClose: () => void;
+  onChanged: () => void;
+  onShow: (g: ClientGroup) => void;
+  onLedger: (g: ClientGroup) => void;
+}) {
+  const [name, setName] = useState("");
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+      onChanged();
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet open={open} wide title="Client groups" subtitle="Group family members (and their HUF) to see them together and send one combined ledger. Each member stays a separate client with their own bills." onClose={onClose}>
+      {error && <Message kind="error">{error}</Message>}
+      <div className="row" style={{ flexWrap: "nowrap", marginBottom: "1rem" }}>
+        <input aria-label="New group name" placeholder="New group, e.g. Shah family" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !name.trim()}
+          onClick={async () => (await run(() => api("/client-groups", { method: "POST", body: { name } }))) && setName("")}
+        >
+          Add group
+        </button>
+      </div>
+      <ul className="list">
+        {groups.map((g) => (
+          <li key={g.id}>
+            <div className="grow">
+              {renaming?.id === g.id ? (
+                <div className="row" style={{ flexWrap: "nowrap" }}>
+                  <input aria-label="Group name" autoFocus maxLength={100} value={renaming.name} onChange={(e) => setRenaming({ id: g.id, name: e.target.value })} />
+                  <button type="button" disabled={busy || !renaming.name.trim()} onClick={async () => (await run(() => api(`/client-groups/${g.id}`, { method: "PUT", body: { name: renaming.name, notes: g.notes } }))) && setRenaming(null)}>
+                    Save
+                  </button>
+                  <button type="button" className="link" onClick={() => setRenaming(null)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="title">{g.name}</div>
+                  <div className="meta">
+                    {g.member_count} {g.member_count === 1 ? "client" : "clients"}
+                  </div>
+                </>
+              )}
+            </div>
+            {renaming?.id !== g.id && (
+              <div className="nowrap">
+                <button type="button" className="link" onClick={() => onShow(g)}>
+                  Show
+                </button>
+                <button type="button" className="link" onClick={() => onLedger(g)}>
+                  Ledger
+                </button>
+                <button type="button" className="link" onClick={() => setRenaming({ id: g.id, name: g.name })}>
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  className="link danger"
+                  onClick={() =>
+                    window.confirm(`Remove the group "${g.name}"?\n\nIts ${g.member_count} clients and all their bills stay exactly as they are; they just won't be grouped.`) &&
+                    run(() => api(`/client-groups/${g.id}`, { method: "DELETE" }))
+                  }
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+        {!groups.length && <li className="muted small">No groups yet.</li>}
+      </ul>
+    </Sheet>
   );
 }

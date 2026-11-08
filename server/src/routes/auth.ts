@@ -3,6 +3,8 @@ import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { HttpError } from "../lib/errors.js";
+import type { Mailer } from "../lib/mailer.js";
+import { completeReset, requestReset } from "../lib/passwordReset.js";
 import { requireAuth, signToken, type AuthUser } from "../middleware/auth.js";
 
 const loginSchema = z.object({
@@ -36,8 +38,42 @@ function recordFailure(key: string) {
   else entry.count++;
 }
 
-export function authRoutes(db: Db): Router {
+const forgotSchema = z.object({ login: z.string().trim().min(1, "Enter your username or email address").max(200) });
+const resetSchema = z.object({
+  token: z.string().trim().min(20, "This reset link is not valid. Ask for a new one.").max(200),
+  password: z.string().min(8, "must be at least 8 characters").max(100),
+});
+
+// At most 5 reset requests per computer per 15 minutes, so the form can't be used to flood an inbox.
+const forgotRequests = new Map<string, { count: number; first: number }>();
+function tooManyRequests(ip: string): boolean {
+  const e = forgotRequests.get(ip);
+  if (!e || Date.now() - e.first > WINDOW_MS) {
+    forgotRequests.set(ip, { count: 1, first: Date.now() });
+    return false;
+  }
+  e.count++;
+  return e.count > 5;
+}
+
+export function authRoutes(db: Db, mailer: Mailer): Router {
   const router = Router();
+
+  // Forgot password (administrators): always the same reply, sent straight away; the email goes out in the
+  // background, so neither the words nor the timing reveal whether an account exists.
+  router.post("/forgot", async (req, res) => {
+    const { login } = forgotSchema.parse(req.body);
+    if (tooManyRequests(req.ip ?? "?")) throw new HttpError(429, "Too many requests. Try again in a few minutes.");
+    void requestReset(db, mailer, login).catch((e) => console.error("password reset email failed:", (e as Error).message));
+    res.json({ ok: true });
+  });
+
+  router.post("/reset", async (req, res) => {
+    const { token, password } = resetSchema.parse(req.body);
+    const { username } = await completeReset(db, token, password);
+    failures.forEach((_v, k) => k.endsWith(`|${username}`) && failures.delete(k)); // a fresh start after a reset
+    res.json({ ok: true, username });
+  });
 
   router.post("/login", async (req, res) => {
     const { username, password } = loginSchema.parse(req.body);

@@ -4,7 +4,16 @@ import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { HttpError } from "../lib/errors.js";
 
-const USER_COLUMNS = "id, username, full_name, role, is_active, created_at";
+const USER_COLUMNS = "id, username, full_name, email, role, is_active, created_at";
+
+// An administrator's email address is where "forgot password" links are sent.
+const emailField = z
+  .string()
+  .trim()
+  .max(150)
+  .transform((v) => (v === "" ? null : v.toLowerCase()))
+  .refine((v) => v === null || /^\S+@\S+\.\S+$/.test(v), "is not valid, for example name@example.com")
+  .nullish();
 
 const passwordSchema = z.string().min(8, "must be at least 8 characters").max(100);
 
@@ -17,6 +26,7 @@ const createSchema = z.object({
   password: passwordSchema,
   full_name: z.string().trim().min(1).max(100),
   role: z.enum(["admin", "staff"]).default("staff"),
+  email: emailField,
 });
 
 const updateSchema = z.object({
@@ -24,6 +34,8 @@ const updateSchema = z.object({
   role: z.enum(["admin", "staff"]).optional(),
   is_active: z.boolean().optional(),
   password: passwordSchema.optional(),
+  /** Left out = unchanged; empty = remove. */
+  email: emailField,
 });
 
 /** Mounted behind requireAuth + requireAdmin. */
@@ -41,8 +53,8 @@ export function userRoutes(db: Db): Router {
     if (taken.rowCount) throw new HttpError(409, "That username is already taken");
     const hash = await bcrypt.hash(input.password, 10);
     const { rows } = await db.query(
-      `INSERT INTO users (username, password_hash, full_name, role) VALUES ($1, $2, $3, $4) RETURNING ${USER_COLUMNS}`,
-      [input.username, hash, input.full_name, input.role],
+      `INSERT INTO users (username, password_hash, full_name, role, email) VALUES ($1, $2, $3, $4, $5) RETURNING ${USER_COLUMNS}`,
+      [input.username, hash, input.full_name, input.role, input.email ?? null],
     );
     res.status(201).json(rows[0]);
   });
@@ -60,9 +72,12 @@ export function userRoutes(db: Db): Router {
          full_name     = COALESCE($2, full_name),
          role          = COALESCE($3, role),
          is_active     = COALESCE($4, is_active),
-         password_hash = COALESCE($5, password_hash)
+         password_hash = COALESCE($5, password_hash),
+         -- a new password ends that person's other sessions
+         password_changed_at = CASE WHEN $5::text IS NULL THEN password_changed_at ELSE now() END,
+         email         = CASE WHEN $6::boolean THEN $7 ELSE email END
        WHERE id = $1 RETURNING ${USER_COLUMNS}`,
-      [id, input.full_name ?? null, input.role ?? null, input.is_active ?? null, hash],
+      [id, input.full_name ?? null, input.role ?? null, input.is_active ?? null, hash, input.email !== undefined, input.email ?? null],
     );
     if (!rows[0]) throw new HttpError(404, "User not found");
     res.json(rows[0]);

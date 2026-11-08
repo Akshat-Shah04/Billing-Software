@@ -5,7 +5,7 @@ import Icon from "../components/Icon";
 import Message from "../components/Message";
 import PageHeader from "../components/PageHeader";
 import { useDebounced } from "../hooks";
-import { calculateTotals, formatDate, formatRupees, fyLabel, fyStartOf, paiseToInput, rupeesToPaise, todayISO } from "../money";
+import { calculateTotals, formatDate, type ItemKind, formatRupees, fyLabel, fyStartOf, paiseToInput, rupeesToPaise, todayISO } from "../money";
 import type { Bill, Client, Page, Service, Settings } from "../types";
 
 interface Row {
@@ -16,6 +16,8 @@ interface Row {
   quantity: string; // not shown any more (always 1 on new lines); kept so older bills with a quantity save unchanged
   /** The line's financial year; null = the same as the bill's. */
   fy: number | null;
+  /** "fee" (the firm's charge) or "reimbursement" (money paid on the client's behalf: no GST, not income). */
+  kind: ItemKind;
   price: string; // rupees, as typed
 }
 
@@ -29,7 +31,7 @@ function addDays(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
-const blankRow = (): Row => ({ key: nextKey++, service_id: null, description: "", details: "", quantity: "1", price: "", fy: null });
+const blankRow = (kind: ItemKind = "fee"): Row => ({ key: nextKey++, service_id: null, description: "", details: "", quantity: "1", price: "", fy: null, kind });
 
 export default function BillForm() {
   const { id } = useParams();
@@ -91,6 +93,7 @@ export default function BillForm() {
               quantity: String(i.quantity),
               price: paiseToInput(i.unit_price_paise),
               fy: i.fy_start === bill.fy_start ? null : i.fy_start,
+              kind: i.kind ?? "fee",
             })),
           );
         } else {
@@ -133,7 +136,7 @@ export default function BillForm() {
     [rows],
   );
   const totals = useMemo(
-    () => calculateTotals(parsed.map((p) => ({ quantity: p.quantity, unit_price_paise: p.unit_price_paise ?? 0 })), rate),
+    () => calculateTotals(parsed.map((p, i) => ({ quantity: p.quantity, unit_price_paise: p.unit_price_paise ?? 0, kind: rows[i]?.kind })), rate),
     [parsed, rate],
   );
 
@@ -170,6 +173,7 @@ export default function BillForm() {
         quantity: parsed[i].quantity,
         unit_price_paise: parsed[i].unit_price_paise,
         fy_start: r.fy ?? fyStart,
+        kind: r.kind,
       })),
     };
     setSaving(true);
@@ -298,7 +302,7 @@ export default function BillForm() {
           <table className="items-table">
             <thead>
               <tr>
-                <th style={{ minWidth: 150 }}>Service</th>
+                <th style={{ minWidth: 150 }}>Service or type</th>
                 <th style={{ minWidth: 200 }}>Item name</th>
                 <th style={{ width: 130 }}>Financial year</th>
                 <th style={{ width: 130 }}>Price (₹)</th>
@@ -314,10 +318,15 @@ export default function BillForm() {
                       <select
                         aria-label={`Service for item ${i + 1}`}
                         disabled={locked}
-                        value={services.some((s) => s.id === r.service_id) ? String(r.service_id) : ""}
-                        onChange={(e) => chooseService(r.key, e.target.value)}
+                        value={r.kind === "reimbursement" ? "__reimbursement" : services.some((s) => s.id === r.service_id) ? String(r.service_id) : ""}
+                        onChange={(e) =>
+                          e.target.value === "__reimbursement"
+                            ? updateRow(r.key, { kind: "reimbursement", service_id: null, fy: null })
+                            : (updateRow(r.key, { kind: "fee" }), chooseService(r.key, e.target.value))
+                        }
                       >
-                        <option value="">Custom item</option>
+                        <option value="">Custom fee item</option>
+                        <option value="__reimbursement">Paid on client’s behalf (tax, govt. fee)</option>
                         {services.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.name}
@@ -326,9 +335,20 @@ export default function BillForm() {
                       </select>
                     </td>
                     <td data-label="Item name">
-                      <input aria-label={`Item name for item ${i + 1}`} disabled={locked} placeholder="e.g. GST Return Filing" maxLength={300} value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />
+                      <input
+                        aria-label={`Item name for item ${i + 1}`}
+                        disabled={locked}
+                        placeholder={r.kind === "reimbursement" ? "e.g. Self-assessment tax AY 2025-26" : "e.g. GST Return Filing"}
+                        maxLength={300}
+                        value={r.description}
+                        onChange={(e) => updateRow(r.key, { description: e.target.value })}
+                      />
+                      {r.kind === "reimbursement" && <div className="hint">Paid on behalf: no GST, not counted as fees</div>}
                     </td>
                     <td data-label="Financial year">
+                      {r.kind === "reimbursement" ? (
+                        <span className="muted small">–</span>
+                      ) : (
                       <select aria-label={`Financial year for item ${i + 1}`} disabled={locked} value={r.fy ?? fyStart} onChange={(e) => updateRow(r.key, { fy: Number(e.target.value) === fyStart ? null : Number(e.target.value) })}>
                         {[...new Set([...fyOptions, r.fy ?? fyStart])]
                           .sort((a, b) => b - a)
@@ -338,6 +358,7 @@ export default function BillForm() {
                             </option>
                           ))}
                       </select>
+                      )}
                     </td>
                     <td data-label="Price (₹)">
                       <input aria-label={`Price for item ${i + 1}`} disabled={locked} inputMode="decimal" maxLength={15} value={r.price} onChange={(e) => updateRow(r.key, { price: e.target.value })} />
@@ -356,13 +377,13 @@ export default function BillForm() {
                   </tr>
                   <tr className="item-desc">
                     <td colSpan={6}>
-                      <label htmlFor={`item-desc-${r.key}`}>Description, printed under the item</label>
+                      <label htmlFor={`item-desc-${r.key}`}>{r.kind === "reimbursement" ? "Payment details: challan no., BSR code, date (printed on the bill)" : "Description, printed under the item"}</label>
                       <textarea
                         id={`item-desc-${r.key}`}
                         rows={2}
                         maxLength={500}
                         disabled={locked}
-                        placeholder="What is included. Filled in from the service; you can change it for this bill."
+                        placeholder={r.kind === "reimbursement" ? "e.g. Challan 00123, BSR code 0510308, paid 30 Jun 2025 from our account" : "What is included. Filled in from the service; you can change it for this bill."}
                         value={r.details}
                         onChange={(e) => updateRow(r.key, { details: e.target.value })}
                       />
@@ -374,25 +395,37 @@ export default function BillForm() {
           </table>
         </div>
         {!locked && (
-          <button type="button" style={{ marginTop: ".75rem" }} onClick={() => setRows((rs) => [...rs, blankRow()])}>
-            <Icon name="plus" />
-            Add item
-          </button>
+          <div className="row" style={{ marginTop: ".75rem" }}>
+            <button type="button" onClick={() => setRows((rs) => [...rs, blankRow()])}>
+              <Icon name="plus" />
+              Add fee item
+            </button>
+            <button type="button" onClick={() => setRows((rs) => [...rs, blankRow("reimbursement")])}>
+              <Icon name="plus" />
+              Add amount paid on behalf
+            </button>
+          </div>
         )}
 
         <div className="totals" style={{ marginTop: "1rem" }}>
           <div>
-            <span>Subtotal</span>
+            <span>Fees</span>
             <span>{formatRupees(totals.subtotal_paise)}</span>
           </div>
           {rate > 0 && (
             <div>
-              <span>GST @ {rate}%</span>
+              <span>GST @ {rate}% (on fees)</span>
               <span>{formatRupees(totals.gst_paise)}</span>
             </div>
           )}
+          {totals.reimbursement_paise > 0 && (
+            <div>
+              <span>Paid on client’s behalf</span>
+              <span>{formatRupees(totals.reimbursement_paise)}</span>
+            </div>
+          )}
           <div className="grand">
-            <span>Total</span>
+            <span>{totals.reimbursement_paise > 0 ? "Total payable" : "Total"}</span>
             <span>{formatRupees(totals.total_paise)}</span>
           </div>
         </div>

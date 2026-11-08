@@ -521,9 +521,9 @@ describe("CSV exports for filing", () => {
     const text = await csv(`/api/exports/bills.csv?client_id=${c.id}&fy=2180`);
     expect(text.startsWith("﻿")).toBe(true); // byte-order mark, so Excel reads the rupee sign and names correctly
     const rows = text.slice(1).trim().split("\r\n");
-    expect(rows[0]).toBe("Bill no.,Bill date,Financial year,Due date,Client,Client GSTIN,Status,Overdue,Subtotal,GST rate %,GST,Total,Credit notes,Paid,Discount,Balance due,Created by");
+    expect(rows[0]).toBe("Bill no.,Bill date,Financial year,Due date,Client,Client GSTIN,Status,Overdue,Fees,GST rate %,GST,Paid on behalf,Total,Credit notes,Paid,Discount,Balance due,Created by");
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toBe(`${bill.bill_no},2180-05-01,2180-81,2180-05-10,Register Co,24AAAAA0000A1Z5,Part paid,No,2469.12,0,0.00,2469.12,0.00,1000.00,0.00,1469.12,Asha Staff`);
+    expect(rows[1]).toBe(`${bill.bill_no},2180-05-01,2180-81,2180-05-10,Register Co,24AAAAA0000A1Z5,Part paid,No,2469.12,0,0.00,0.00,2469.12,0.00,1000.00,0.00,1469.12,Asha Staff`);
     expect((await csv(`/api/exports/bills.csv?client_id=${c.id}&fy=2179`)).slice(1).trim().split("\r\n")).toHaveLength(1); // header only
     expect((await api.get("/api/exports/bills.csv?status=bogus").set(auth(staff))).status).toBe(400);
   });
@@ -652,7 +652,7 @@ describe("discounts: the client pays less and the firm agrees to settle", () => 
     const sum = (await api.get("/api/bills/summary?fy=1997").set(auth(staff))).body;
     expect(sum).toMatchObject({ billed_paise: 1_500_000, collected_paise: 1_200_000, discount_paise: 300_000, outstanding_paise: 0 });
     const reg = (await api.get(`/api/exports/bills.csv?client_id=${c.id}`).set(auth(staff))).text.slice(1).trim().split("\r\n");
-    expect(reg[1]).toContain(",Paid,No,15000.00,0,0.00,15000.00,0.00,12000.00,3000.00,0.00,");
+    expect(reg[1]).toContain(",Paid,No,15000.00,0,0.00,0.00,15000.00,0.00,12000.00,3000.00,0.00,");
     const st = (await api.get(`/api/exports/statement.csv?client_id=${c.id}`).set(auth(staff))).text.slice(1).trim().split("\r\n").map((r) => r.split(","));
     expect(st.slice(1, -1).map((r) => r[1])).toEqual(["Bill", "Payment", "Discount"]);
     expect(st[st.length - 1][6]).toBe("0.00");

@@ -1,4 +1,5 @@
 import type { Queryable } from "../db/index.js";
+import { billSums } from "./billData.js";
 import { HttpError } from "./errors.js";
 import { fyLabel, prettyDateOf } from "./fy.js";
 import { addHistory, rupeesText } from "./history.js";
@@ -37,13 +38,26 @@ interface BillRow {
   bill_date: string;
   fy_start: number;
   gst_rate_percent: number;
+  subtotal_paise: number;
+  gst_paise: number;
+  reimbursement_paise: number;
+}
+
+/**
+ * How much of a bill's FEES (fees + GST) is still unpaid. Payments go towards the amount paid on the client's behalf
+ * first, so fees are only paid once that is fully recovered. Credit notes and discounts reduce fees.
+ */
+export async function feesStillDue(q: Queryable, bill: BillRow): Promise<number> {
+  const sums = await billSums(q, bill.id);
+  const feesPaid = Math.max(0, sums.paid - bill.reimbursement_paise);
+  return Math.max(0, bill.subtotal_paise + bill.gst_paise - sums.credited - sums.discounted - feesPaid);
 }
 
 /** Loads the bill fields needed to settle it (call inside the transaction, after locking the bill). */
 export async function billForSettling(q: Queryable, billId: number): Promise<BillRow> {
   return (
     await q.query<BillRow>(
-      "SELECT id, bill_no, bill_date::text AS bill_date, fy_start, gst_rate_percent FROM bills WHERE id = $1",
+      "SELECT id, bill_no, bill_date::text AS bill_date, fy_start, gst_rate_percent, subtotal_paise, gst_paise, reimbursement_paise FROM bills WHERE id = $1",
       [billId],
     )
   ).rows[0];
@@ -66,6 +80,16 @@ export async function settleShortfall(
     );
     await addHistory(q, { billId: bill.id, userId, action: "discount_given", summary: `Discount of ${rupeesText(amount)} given: ${reason}` });
     return { cn_no: null };
+  }
+
+  // A credit note reduces FEES. If the shortfall is more than the fees still unpaid, the rest is money the firm paid on
+  // the client's behalf and will not get back: that part is recorded as a discount (it carries no GST to reduce).
+  const feesDue = await feesStillDue(q, bill);
+  if (amount > feesDue) {
+    const unrecovered = amount - feesDue;
+    await settleShortfall(q, { ...o, amount: unrecovered, as: "discount", reason: `${reason} (amount paid on your behalf, not recovered)` });
+    if (feesDue === 0) return { cn_no: null };
+    return settleShortfall(q, { ...o, amount: feesDue });
   }
 
   // A credit note can't be dated before the bill it corrects.

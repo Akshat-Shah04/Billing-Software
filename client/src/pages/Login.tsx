@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import BrandMark from "../components/BrandMark";
 import Message from "../components/Message";
@@ -48,7 +49,14 @@ export default function Login() {
             />
           </div>
           <div className="field" style={{ marginBottom: "1.25rem" }}>
-            <label htmlFor="password">Password</label>
+            <div className="row between" style={{ marginBottom: "0.3rem" }}>
+              <label htmlFor="password" style={{ margin: 0 }}>
+                Password
+              </label>
+              <Link to="/forgot-password" className="small">
+                Forgot password?
+              </Link>
+            </div>
             <input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           <button className="primary" style={{ width: "100%", minHeight: 38 }} disabled={busy || !username || !password}>

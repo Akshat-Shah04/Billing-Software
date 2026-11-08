@@ -19,7 +19,7 @@ export interface BillSnapshot {
   subtotal_paise: number;
   gst_paise: number;
   total_paise: number;
-  items: { service_id: number | null; description: string; details: string | null; quantity: number; unit_price_paise: number; line_total_paise: number; fy_start?: number | null }[];
+  items: { service_id: number | null; description: string; details: string | null; quantity: number; unit_price_paise: number; line_total_paise: number; fy_start?: number | null; kind?: string | null }[];
 }
 
 export async function addHistory(
@@ -33,7 +33,7 @@ export async function addHistory(
 }
 
 const itemKey = (i: BillSnapshot["items"][number]) =>
-  JSON.stringify([i.service_id ?? null, i.description, i.details ?? null, i.quantity, i.unit_price_paise, i.fy_start ?? null]);
+  JSON.stringify([i.service_id ?? null, i.description, i.details ?? null, i.quantity, i.unit_price_paise, i.fy_start ?? null, i.kind ?? "fee"]);
 
 /** True when the line items are not exactly the same. */
 export const itemsDiffer = (a: BillSnapshot["items"], b: BillSnapshot["items"]): boolean =>

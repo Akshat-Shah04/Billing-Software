@@ -19,7 +19,7 @@ export default function Layout() {
     ["/clients", "Clients", "clients"],
     ["/services", "Services", "services"],
   ];
-  if (user?.role === "admin") links.push(["/staff", "Staff", "staff"], ["/settings", "Settings", "settings"]);
+  if (user?.role === "admin") links.push(["/reports", "Reports", "report"], ["/staff", "Staff", "staff"], ["/settings", "Settings", "settings"]);
 
   return (
     <div className="app">

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { api, apiUpload } from "../api";
 import Icon from "../components/Icon";
+import MailSettings from "../components/MailSettings";
 import Message from "../components/Message";
 import PageHeader from "../components/PageHeader";
 import { useLogoUrl } from "../hooks";
@@ -320,6 +321,8 @@ export default function SettingsPage() {
         </div>
         <p className="section-foot">Anything left empty is not printed. If everything is empty, bills show no payment section.</p>
       </form>
+
+      <MailSettings />
 
       {backup && (
         <>

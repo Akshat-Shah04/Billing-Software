@@ -9,7 +9,7 @@ import Segmented from "../components/Segmented";
 import StatusBadge from "../components/StatusBadge";
 import { useDebounced, useLoad } from "../hooks";
 import { formatDate, formatRupees, fyLabel } from "../money";
-import type { BillSummary, BillsTotals, Client, FinancialYear, Page } from "../types";
+import type { BillSummary, BillsTotals, Client, ClientGroup, FinancialYear, Page } from "../types";
 
 type Status = "" | "outstanding" | "overdue" | "paid" | "cancelled";
 const STATUS_OPTIONS: { value: Status; label: string }[] = [
@@ -43,6 +43,7 @@ export default function Bills() {
   // Filters live in the address, so Back returns to the same list and a filtered list can be bookmarked.
   const [params, setParams] = useSearchParams();
   const fy = params.get("fy") ?? "";
+  const groupId = params.get("group_id") ?? "";
   const status = (params.get("status") ?? "") as Status;
   const clientId = params.get("client_id") ?? "";
   const page = Number(params.get("page") ?? 1) || 1;
@@ -62,18 +63,19 @@ export default function Bills() {
   }
 
   const years = useLoad(() => api<{ items: FinancialYear[] }>("/bills/financial-years"), "years");
-  const totals = useLoad(() => api<BillsTotals>(`/bills/summary${qs({ fy })}`), `sum|${fy}`);
+  const totals = useLoad(() => api<BillsTotals>(`/bills/summary${qs({ fy, group_id: groupId })}`), `sum|${fy}|${groupId}`);
+  const groups = useLoad(() => api<{ items: ClientGroup[] }>("/client-groups"), "groups");
   const client = useLoad(() => (clientId ? api<Client>(`/clients/${clientId}`) : Promise.resolve(null)), `client|${clientId}`);
   const { data, error, loading } = useLoad(
-    () => api<Page<BillSummary>>(`/bills${qs({ q, fy, status, client_id: clientId, page })}`),
-    `${q}|${fy}|${status}|${clientId}|${page}`,
+    () => api<Page<BillSummary>>(`/bills${qs({ q, fy, status, client_id: clientId, group_id: groupId, page })}`),
+    `${q}|${fy}|${status}|${clientId}|${groupId}|${page}`,
   );
 
   async function exportCsv() {
     setExportError("");
     setExporting(true);
     try {
-      await downloadFile(`/exports/bills.csv${qs({ q, fy, status, client_id: clientId })}`, "bills.csv");
+      await downloadFile(`/exports/bills.csv${qs({ q, fy, status, client_id: clientId, group_id: groupId })}`, "bills.csv");
     } catch (e) {
       setExportError((e as Error).message);
     } finally {
@@ -82,7 +84,7 @@ export default function Bills() {
   }
 
   const t = totals.data;
-  const filtered = Boolean(q || fy || status || clientId);
+  const filtered = Boolean(q || fy || status || clientId || groupId);
 
   return (
     <>
@@ -100,19 +102,22 @@ export default function Bills() {
       {t && (
         <div className="tiles">
           <div className="tile">
-            <div className="tile-label">Billed</div>
-            {/* Net of credit notes and discounts, so a bill settled for less counts at what it was settled for. */}
-            <div className="tile-value">{formatRupees(t.billed_paise - t.credited_paise - t.discount_paise)}</div>
+            <div className="tile-label">Fees billed</div>
+            {/* Fees and their GST, net of credit notes and discounts. Amounts paid on clients' behalf are not fees. */}
+            <div className="tile-value">{formatRupees(t.billed_paise - t.reimbursement_paise - t.credited_paise - t.discount_paise)}</div>
             <div className="tile-sub">
-              {t.credited_paise + t.discount_paise > 0
-                ? `${formatRupees(t.billed_paise)} before ${formatRupees(t.credited_paise + t.discount_paise)} of credit notes and discounts`
-                : "Cancelled bills not included"}
+              {[
+                t.credited_paise + t.discount_paise > 0 && `after ${formatRupees(t.credited_paise + t.discount_paise)} credit notes and discounts`,
+                t.reimbursement_paise > 0 && `${formatRupees(t.reimbursement_paise)} paid on clients’ behalf not included`,
+              ]
+                .filter(Boolean)
+                .join("; ") || "Fees and GST; cancelled bills not included"}
             </div>
           </div>
           <div className="tile">
             <div className="tile-label">Received</div>
             <div className="tile-value">{formatRupees(t.collected_paise)}</div>
-            <div className="tile-sub">Payments recorded</div>
+            <div className="tile-sub">{t.reimbursed_paise > 0 ? `${formatRupees(t.reimbursed_paise)} of it paid back amounts paid on behalf` : "Payments recorded"}</div>
           </div>
           <button type="button" className="tile" onClick={() => setFilter({ status: "outstanding" })} aria-label={`Unpaid: ${formatRupees(t.outstanding_paise)} on ${t.outstanding_count} bills. Show them.`}>
             <div className="tile-label">To collect</div>
@@ -162,6 +167,16 @@ export default function Bills() {
             />
           </div>
           <Segmented label="Show bills" options={STATUS_OPTIONS} value={status} onChange={(v) => setFilter({ status: v })} />
+          {(groups.data?.items.length ?? 0) > 0 && (
+            <select aria-label="Group" value={groupId} onChange={(e) => setFilter({ group_id: e.target.value })}>
+              <option value="">All groups</option>
+              {groups.data?.items.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          )}
           <select aria-label="Financial year" value={fy} onChange={(e) => setFilter({ fy: e.target.value })}>
             <option value="">All years</option>
             {years.data?.items.map((y) => (
@@ -203,7 +218,7 @@ export default function Bills() {
                   </td>
                   <td className="c-client">
                     {b.client_name} {b.client_deleted && <span className="badge plain">deleted client</span>}
-                    <div className="muted tiny">{[b.client_phone, b.client_city].filter(Boolean).join(" · ")}</div>
+                    <div className="muted tiny">{[b.group_name, b.client_phone, b.client_city].filter(Boolean).join(" · ")}</div>
                   </td>
                   <td className="c-items">
                     <ItemBullets items={b.items} />
