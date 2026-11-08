@@ -23,7 +23,10 @@ param(
   [string]$NodeExe = "",
   [switch]$SkipService,
   # The .NET Framework 4.6.1 build of WinSW runs natively on x64, x86 and ARM64. Windows 10 (1607+) and 11 include .NET 4.6.2 or newer.
-  [string]$WinSwUrl = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET461.exe"
+  [string]$WinSwUrl = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET461.exe",
+  # The same file through GitHub's API (used when the link above is failing), and its SHA-256.
+  [string]$WinSwApiUrl = "https://api.github.com/repos/winsw/winsw/releases/assets/93386826",
+  [string]$WinSwSha256 = "b5066b7bbdfba1293e5d15cda3caaea88fbeab35bd5b38c41c913d492aadfc4f"
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,6 +39,18 @@ $Staging = Join-Path $Installer "staging"
 $Cache = Join-Path $Installer ".cache"
 
 function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
+
+# Downloads can fail for a moment (e.g. "504 Gateway Time-out" from GitHub), so each one is tried up to 4 times.
+function Retry([scriptblock]$action, [string]$what, [int]$tries = 4) {
+  for ($attempt = 1; ; $attempt++) {
+    try { return & $action }
+    catch {
+      if ($attempt -ge $tries) { throw "Could not download $what after $attempt tries: $($_.Exception.Message)" }
+      Write-Host "  $what failed ($($_.Exception.Message)); trying again in $($attempt * 10) seconds"
+      Start-Sleep -Seconds ($attempt * 10)
+    }
+  }
+}
 function Run($dir, $cmd) {
   Push-Location $dir
   try {
@@ -71,7 +86,7 @@ function Get-Node([int]$major, [string]$arch) {
   New-Item -ItemType Directory -Force $dest | Out-Null
   if ($NodeExe) { Copy-Item $NodeExe "$dest\node.exe"; return }
 
-  $index = Invoke-RestMethod "https://nodejs.org/dist/index.json"
+  $index = Retry { Invoke-RestMethod "https://nodejs.org/dist/index.json" } "the Node.js release list"
   $release = $index | Where-Object { $_.version -like "v$major.*" -and $_.files -contains "win-$arch-zip" } | Select-Object -First 1
   if (-not $release) { throw "No Node.js v$major release found for win-$arch" }
   $version = $release.version
@@ -79,9 +94,9 @@ function Get-Node([int]$major, [string]$arch) {
   $zip = Join-Path $Cache $zipName
   if (-not (Test-Path $zip)) {
     Write-Host "Downloading $zipName"
-    Invoke-WebRequest "https://nodejs.org/dist/$version/$zipName" -OutFile $zip -UseBasicParsing
+    Retry { Invoke-WebRequest "https://nodejs.org/dist/$version/$zipName" -OutFile $zip -UseBasicParsing } $zipName
   }
-  $sums = (Invoke-WebRequest "https://nodejs.org/dist/$version/SHASUMS256.txt" -UseBasicParsing).Content
+  $sums = (Retry { Invoke-WebRequest "https://nodejs.org/dist/$version/SHASUMS256.txt" -UseBasicParsing } "the Node.js checksums").Content
   $line = $sums -split "`n" | Where-Object { $_ -match "\s$([regex]::Escape($zipName))$" } | Select-Object -First 1
   if (-not $line) { throw "No checksum published for $zipName" }
   $expected = $line.Split(" ")[0].Trim()
@@ -106,7 +121,18 @@ Step "Adding the Windows service wrapper (WinSW)"
 if ($SkipService) {
   Write-Host "Skipped (-SkipService)"
 } else {
-  Invoke-WebRequest $WinSwUrl -OutFile "$Staging\service\billing-service.exe" -UseBasicParsing
+  $winsw = "$Staging\service\billing-service.exe"
+  try {
+    Retry { Invoke-WebRequest $WinSwUrl -OutFile $winsw -UseBasicParsing } "WinSW" 2
+  } catch {
+    # GitHub's normal download link sometimes fails for a while ("504 Gateway Time-out") while its API still works.
+    Write-Host "  The download link failed; getting WinSW through the GitHub API instead"
+    Retry { Invoke-WebRequest $WinSwApiUrl -Headers @{ Accept = "application/octet-stream" } -OutFile $winsw -UseBasicParsing } "WinSW (GitHub API)"
+  }
+  # Whichever way it came, it must be exactly the WinSW 2.12.0 release file.
+  $hash = (Get-FileHash $winsw -Algorithm SHA256).Hash.ToLower()
+  if ($hash -ne $WinSwSha256) { Remove-Item $winsw -Force; throw "WinSW failed its checksum check (got $hash)" }
+  Write-Host "WinSW 2.12.0 (.NET 4.6.1), checksum verified"
 }
 
 Step "Done"

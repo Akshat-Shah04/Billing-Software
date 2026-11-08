@@ -62,6 +62,22 @@ A billing software for an accountancy firm to manage clients, services and bills
 - **Redesigned interface** following Apple's Human Interface Guidelines (see "Look and feel").
 - **Installer** for every Windows 10 (1607+) and Windows 11 PC: 64-bit, ARM and 32-bit, with a port check and a start-up check.
 
+## New in v0.3
+
+- **Paid on the client's behalf**: a bill line can be money the firm paid for the client (e.g. income tax paid from the firm's
+  account, with the challan details). It carries no GST and is not counted as fees; the bill shows it in its own section and
+  the total payable includes it. Payments go towards it first; a short payment is settled from the fees, never from it.
+- **Client groups**: a family (or any related clients, e.g. an HUF and its members) can be grouped. Clients and bills can be
+  filtered by group, and the group gets one combined statement.
+- **Statement of account** (Clients → Ledger, or Groups → Ledger) for any period, as a PDF in the firm's format: opening
+  balance, every bill and receipt with a running balance, Total, OUTSTANDING BALANCE, the bills still pending (receipts applied
+  to the oldest bill first), and a closing request with the bank details.
+- **Fees report** (Reports, administrators): every bill in a period in brief with a summary and a month-by-month table, on
+  screen, as Excel (Summary, Month by month and Bills sheets) and as PDF. Fees are kept apart from GST and amounts paid on behalf.
+- **Forgot password** for administrators: a link on the login page sends a one-time reset link (valid 30 minutes) to the
+  admin's email address. Set up the mail server under Settings → Email and add each admin's email under Staff → Edit.
+  Changing a password logs that account out everywhere else. Staff passwords are still reset by an administrator.
+
 ## Tech Stack
 
 | Area | Technology |

@@ -12,10 +12,12 @@ export const itemSchema = z.object({
   unit_price_paise: z.number().int().min(0).max(100_000_000_000),
   /** The financial year this line is for (2024 = FY 2024-25), printed on the bill. Left out: the bill's own year. */
   fy_start: z.number().int().min(1990, "Financial year must be 1990-91 or later").max(2200).nullish(),
+  /** "fee" (default) or "reimbursement": money paid on the client's behalf, recovered without GST and not income. */
+  kind: z.enum(["fee", "reimbursement"]).default("fee"),
 });
 
 /** One line of a credit note (no service or year: it corrects amounts already billed). */
-export const creditLineSchema = itemSchema.omit({ service_id: true, fy_start: true });
+export const creditLineSchema = itemSchema.omit({ service_id: true, fy_start: true, kind: true });
 
 export type ItemInput = z.infer<typeof itemSchema>;
 
@@ -46,9 +48,9 @@ export async function assertServicesExist(q: Queryable, items: ItemInput[]) {
 export async function insertItems(q: Queryable, billId: number, items: ItemInput[], billFy: number) {
   for (const i of items) {
     await q.query(
-      `INSERT INTO bill_items (bill_id, service_id, description, details, quantity, unit_price_paise, line_total_paise, fy_start)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [billId, i.service_id ?? null, i.description, i.details, i.quantity, i.unit_price_paise, i.quantity * i.unit_price_paise, i.fy_start ?? billFy],
+      `INSERT INTO bill_items (bill_id, service_id, description, details, quantity, unit_price_paise, line_total_paise, fy_start, kind)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [billId, i.service_id ?? null, i.description, i.details, i.quantity, i.unit_price_paise, i.quantity * i.unit_price_paise, i.fy_start ?? billFy, i.kind ?? "fee"],
     );
   }
 }

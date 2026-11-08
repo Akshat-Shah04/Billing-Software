@@ -36,15 +36,17 @@ export function exportRoutes(db: Db): Router {
     if (status !== null && !["outstanding", "overdue", "paid", "cancelled"].includes(status)) throw new HttpError(400, "status must be outstanding, overdue, paid or cancelled");
     const fy = readFy(req.query.fy);
 
-    const { sql, params } = billFilterSql({ q, clientId, fy, status: status as never }, likePattern);
+    const groupId = req.query.group_id ? Number(req.query.group_id) : null;
+    if (groupId !== null && !Number.isInteger(groupId)) throw new HttpError(400, "group_id must be a number");
+    const { sql, params } = billFilterSql({ q, clientId, fy, status: status as never, groupId }, likePattern);
     const { rows } = await db.query(`SELECT ${BILL_LIST_COLUMNS} ${sql} ORDER BY b.bill_date, b.id`, params);
 
-    const head = ["Bill no.", "Bill date", "Financial year", "Due date", "Client", "Client GSTIN", "Status", "Overdue", "Subtotal", "GST rate %", "GST", "Total", "Credit notes", "Paid", "Discount", "Balance due", "Created by"];
+    const head = ["Bill no.", "Bill date", "Financial year", "Due date", "Client", "Client GSTIN", "Status", "Overdue", "Fees", "GST rate %", "GST", "Paid on behalf", "Total", "Credit notes", "Paid", "Discount", "Balance due", "Created by"];
     const body = rows.map((r: any) => {
       const b = withSettlement(r);
       return [
         text(b.bill_no), b.bill_date, fyLabelOf(b.fy_start), b.due_date ?? "", text(b.client_name), text(b.client_gstin ?? ""),
-        stateText(b), b.overdue ? "Yes" : "No", rupees(b.subtotal_paise), String(b.gst_rate_percent), rupees(b.gst_paise), rupees(b.total_paise),
+        stateText(b), b.overdue ? "Yes" : "No", rupees(b.subtotal_paise), String(b.gst_rate_percent), rupees(b.gst_paise), rupees(b.reimbursement_paise), rupees(b.total_paise),
         rupees(b.credited_paise), rupees(b.paid_paise), rupees(b.discount_paise), rupees(b.balance_paise), text(b.created_by_name),
       ];
     });

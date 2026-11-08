@@ -569,6 +569,8 @@ tr.dim td { color: var(--muted); }
 /* The clients table scrolls sideways in a narrow window instead of squeezing words into single letters. */
 .table-clients { min-width: 760px; }
 .table-clients td { overflow-wrap: normal; }
+.table-report { min-width: 860px; }
+.table-report td { overflow-wrap: normal; }
 tr.struck td.amount { text-decoration: line-through; }
 .empty-cell { text-align: center; color: var(--muted); padding: 3rem 1rem !important; }
 .empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }

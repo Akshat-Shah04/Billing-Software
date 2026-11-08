@@ -77,11 +77,10 @@ ${rows}
 }
 
 function totalsBlock(d: any, label: string): string {
-  return `<div class="t">${
-    d.gst_rate_percent > 0
-      ? `<div><span>Subtotal</span><span>${money(d.subtotal_paise)}</span></div><div><span>GST @ ${d.gst_rate_percent}%</span><span>${money(d.gst_paise)}</span></div>`
-      : ""
-  }<div class="g"><span>${esc(label)}</span><span>${money(d.total_paise)}</span></div></div>
+  const pob = d.reimbursement_paise ?? 0;
+  return `<div class="t">${d.gst_rate_percent > 0 || pob > 0 ? `<div><span>Fees</span><span>${money(d.subtotal_paise)}</span></div>` : ""}${
+    d.gst_rate_percent > 0 ? `<div><span>GST @ ${d.gst_rate_percent}% (on fees)</span><span>${money(d.gst_paise)}</span></div>` : ""
+  }${pob > 0 ? `<div><span>Paid on your behalf</span><span>${money(pob)}</span></div>` : ""}<div class="g"><span>${esc(pob > 0 && label === "Total" ? "Total payable" : label)}</span><span>${money(d.total_paise)}</span></div></div>
 <div class="words"><div><div class="label">Amount in words</div>${esc(amountInWords(d.total_paise))}</div><div class="m">E.&amp; O.E.</div></div>`;
 }
 
@@ -148,7 +147,8 @@ ${bill.discount_paise > 0 ? `<div><span>Discount</span><span>− ${money(bill.di
   const body = `${cancelled ? '<div class="stamp">CANCELLED</div>' : ""}
 ${letterhead(org, logoUri)}
 ${party(bill, "PROFESSIONAL INVOICE", rows, tag)}
-${itemsTable(bill.items, { heading: "Being the charges for services rendered", year: true })}
+${itemsTable(bill.items.filter((i: any) => i.kind !== "reimbursement"), { heading: "Being the charges for services rendered", year: true })}
+${bill.items.some((i: any) => i.kind === "reimbursement") ? `<div style="margin-top:1rem">${itemsTable(bill.items.filter((i: any) => i.kind === "reimbursement"), { heading: "Paid on your behalf (no GST)", year: false })}</div>` : ""}
 ${totalsBlock(bill, "Total")}
 ${settleRows}
 ${cancelled ? `<div class="cancel">This bill was cancelled on ${prettyTimestamp(bill.cancelled_at)}${bill.cancelled_by_name ? ` by ${esc(bill.cancelled_by_name)}` : ""}: ${esc(bill.cancel_reason)}</div>` : ""}

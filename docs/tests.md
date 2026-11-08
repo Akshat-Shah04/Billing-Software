@@ -5,8 +5,8 @@ checks that were done by hand in a running copy of the app, and what has **not**
 
 ## Latest run
 
-- **Date:** 08 Nov 2026, 12:23
-- **Result:** 117 of 117 tests passed, 0 failed
+- **Date:** 08 Nov 2026, 15:11
+- **Result:** 128 of 128 tests passed, 0 failed
 - **Command:** `cd server && npm test` (Vitest + Supertest). Each test file starts its own in-memory PostgreSQL
   (PGlite), so no database setup is needed and tests never touch real data.
 - **Also checked:** `npm run typecheck` in `server/` and `npm run build` in `client/` (TypeScript and production build) both pass.
@@ -17,7 +17,8 @@ checks that were done by hand in a running copy of the app, and what has **not**
 | [`server/test/api.test.ts`](../server/test/api.test.ts) | Core API (v0.1) | 37 | 37 passed |
 | [`server/test/clientFiles.test.ts`](../server/test/clientFiles.test.ts) | Client folders on disk | 15 | 15 passed |
 | [`server/test/v02.test.ts`](../server/test/v02.test.ts) | v0.2 features | 61 | 61 passed |
-| **Total** | | **117** | **117 passed** |
+| [`server/test/v03.test.ts`](../server/test/v03.test.ts) | v0.3 features | 11 | 11 passed |
+| **Total** | | **128** | **128 passed** |
 
 ## Money maths: `money.test.ts`
 
@@ -239,6 +240,36 @@ Numbering, financial year, due dates, payments, credit notes, settling short pay
 - ✅ Is off, with a clear message, when no backup folder is set up
 - ✅ Is controlled by admins only, over the API
 
+## v0.3 features: `v03.test.ts`
+
+Client groups, amounts paid on clients' behalf, the statement of account, the fees report (Excel and PDF) and forgot password by email.
+
+### Client groups (e.g. a family)
+
+- ✅ Creates groups, puts clients in them, and filters clients and bills by group
+- ✅ Renames a group, and deleting it keeps its clients and their bills
+
+### Paid on the client's behalf (e.g. tax paid from the firm's account)
+
+- ✅ Adds no GST to it and keeps it out of fees
+- ✅ Settles a short payment from the fees, never from the tax paid on behalf
+- ✅ Shows it separately on the bill copy and in the register
+
+### Ledger account for a client or a group
+
+- ✅ Gives an opening balance, every transaction in the range with a running balance, and a closing balance
+- ✅ Combines every member for a group, and downloads as a PDF for staff too
+
+### Fees report (admin)
+
+- ✅ Summarises bills in a range, month by month, leaving cancelled bills out of the totals
+- ✅ Downloads a real Excel workbook and a PDF
+
+### Forgot password (administrators, by email)
+
+- ✅ Emails a one-time link to an admin, which sets a new password and ends old sessions
+- ✅ Refuses a made-up or expired link
+
 ## Checks done by hand in the running app
 
 Done in a throwaway preview copy (its own database, sample clients and bills), not on real data.
@@ -261,13 +292,17 @@ Done in a throwaway preview copy (its own database, sample clients and bills), n
 | Clients | List, Bills and Statement links, add/edit sheet. |
 | Professional invoice layout | Bill page and PDF follow the firm's demo bill: letterhead with tagline, address and mobile; PROFESSIONAL INVOICE box with Bill No., Date and File No.; Sr. / services rendered / Year (FY 2026-2027) / Amount; amount in words with E.& O.E.; due date under Remarks; For, firm name with signatory and State: GUJARAT(24); Subject to Ahmedabad jurisdiction. A typical bill fits on one A4 page. |
 | Mobile numbers | Client form strips letters as you type, shows how many digits are missing, and keeps Add disabled until there are 10 digits; File No. is upper-cased. |
+| Paid on behalf (v0.3) | Bill with a fee and tax paid on the client's behalf: GST only on the fee, separate 'Paid on your behalf (no GST)' table with challan details, Total payable, amount in words of the full total; Bills tiles show fees apart from paid-on-behalf. |
+| Statement of account (v0.3) | Group statement PDF follows the firm's format: STATEMENT OF ACCOUNT AS ON date, To: group (members), Date / Particulars / Bill-Ref / Debit / Credit / Balance with wrapped particulars, Total, OUTSTANDING BALANCE, bills pending with receipts applied oldest first, closing request with bank details, E. & O.E. |
+| Fees report (v0.3) | Reports page shows summary tiles and month by month; landscape PDF fits all columns; Excel has Summary, Month by month and Bills sheets. |
+| Forgot password (v0.3) | Login page has the Forgot password link; the request page shows; reset emails are covered by automated tests with a stand-in mailer (no real email was sent). |
 | Installer artwork | Icon frames (16 to 256 px) read back correctly; wizard picture checked visually. |
 
 ## Not tested yet
 
 - **The React screens have no automated tests.** They were checked by hand (above) and by the TypeScript build.
-- **The Windows installer has not been compiled or run.** Inno Setup is not installed on the development PC. The CI job `installer` in `.github/workflows/ci.yml` compiles it on every pull request.
-- **Installing on real machines:** Windows 10 and 11 on 64-bit, ARM (Snapdragon) and 32-bit PCs; upgrading from v0.1; the port-in-use warning and the start-up check. All of these need a test run on actual PCs.
+- **Sending real email** (Gmail / Outlook SMTP) has not been tried; it needs the firm's mail account. Use Settings → Email → Send test email.
+- **The installer** is compiled by CI on every pull request and v0.2.x was installed on the office PC; the 32-bit and ARM installs and an upgrade from v0.1 have not been tried on real machines.
 - **Running on Node.js 22** (used for 32-bit Windows): the code is compatible, but the tests were run on Node 24 only.
 - **Printing from the browser** and the second backup location on a USB drive or network folder.
 

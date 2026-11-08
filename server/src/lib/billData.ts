@@ -28,14 +28,16 @@ export async function billSums(q: Queryable, billId: number): Promise<{ paid: nu
 export interface BillFilters {
   q?: string;
   clientId?: number | null;
+  /** Bills of every client in this group (e.g. a family). */
+  groupId?: number | null;
   fy?: number | null;
   status?: "outstanding" | "overdue" | "paid" | "cancelled" | null;
 }
 
-/** FROM / JOIN / WHERE shared by the bills list, the summary and the CSV export. Parameters $1 to $5. */
+/** FROM / JOIN / WHERE shared by the bills list, the summary and the CSV export. Parameters $1 to $6. */
 export function billFilterSql(f: BillFilters, likePattern: (s: string) => string) {
   const q = (f.q ?? "").trim();
-  const params = [q ? likePattern(q) : null, f.clientId ?? null, f.fy ?? null, f.status ?? null, todayISO()];
+  const params = [q ? likePattern(q) : null, f.clientId ?? null, f.fy ?? null, f.status ?? null, todayISO(), f.groupId ?? null];
   const sql = `
     FROM bills b
     JOIN clients c ON c.id = b.client_id
@@ -45,6 +47,7 @@ export function billFilterSql(f: BillFilters, likePattern: (s: string) => string
     ${DISCOUNT_JOIN}
     WHERE ($1::text IS NULL OR c.name ILIKE $1 OR b.bill_no ILIKE $1)
       AND ($2::int IS NULL OR b.client_id = $2)
+      AND ($6::int IS NULL OR c.group_id = $6::int)
       AND ($3::int IS NULL OR b.fy_start = $3::int)
       AND ($4::text IS NULL
            OR ($4 = 'outstanding' AND b.status = 'active' AND ${BALANCE_SQL} > 0)
@@ -56,11 +59,12 @@ export function billFilterSql(f: BillFilters, likePattern: (s: string) => string
 
 export const BILL_LIST_COLUMNS = `
   b.id, b.bill_no, b.bill_date::text AS bill_date, b.due_date::text AS due_date, ${FY_START_SQL} AS fy_start,
-  b.status, b.subtotal_paise, b.gst_rate_percent, b.gst_paise, b.total_paise,
+  b.status, b.subtotal_paise, b.gst_rate_percent, b.gst_paise, b.reimbursement_paise, b.total_paise,
   COALESCE(p.paid, 0)::bigint AS paid_paise, COALESCE(cn.credited, 0)::bigint AS credited_paise,
   COALESCE(d.discounted, 0)::bigint AS discount_paise,
   b.client_id, c.name AS client_name, c.phone AS client_phone, c.city AS client_city,
-  c.gstin AS client_gstin, c.is_deleted AS client_deleted, b.created_at, cu.full_name AS created_by_name`;
+  c.gstin AS client_gstin, c.is_deleted AS client_deleted, b.created_at, cu.full_name AS created_by_name,
+  c.group_id, (SELECT g.name FROM client_groups g WHERE g.id = c.group_id) AS group_name`;
 
 /** The bill's lines (name and financial year, in order) for the Items column of the bills list. */
 export const BILL_ITEMS_SUMMARY = `
@@ -77,8 +81,8 @@ export async function getBill(q: Queryable, id: number) {
     await q.query(
       `SELECT b.id, b.bill_no, b.bill_date::text AS bill_date, b.due_date::text AS due_date, ${FY_START_SQL} AS fy_start,
               b.notes, b.status, b.cancelled_at, b.cancel_reason, xu.full_name AS cancelled_by_name,
-              b.subtotal_paise, b.gst_rate_percent, b.gst_paise, b.total_paise,
-              b.client_id, c.name AS client_name, c.phone AS client_phone, c.city AS client_city,
+              b.subtotal_paise, b.gst_rate_percent, b.gst_paise, b.reimbursement_paise, b.total_paise,
+              b.client_id, c.name AS client_name, c.group_id, (SELECT g.name FROM client_groups g WHERE g.id = c.group_id) AS group_name, c.phone AS client_phone, c.city AS client_city,
               c.address AS client_address, c.gstin AS client_gstin, c.pan AS client_pan, c.file_no AS client_file_no,
               b.created_at, b.updated_at,
               cu.full_name AS created_by_name, uu.full_name AS updated_by_name
@@ -95,7 +99,7 @@ export async function getBill(q: Queryable, id: number) {
 
   const items = (
     await q.query(
-      `SELECT id, service_id, description, details, quantity, unit_price_paise, line_total_paise, fy_start
+      `SELECT id, service_id, description, details, quantity, unit_price_paise, line_total_paise, fy_start, kind
        FROM bill_items WHERE bill_id = $1 ORDER BY id`,
       [id],
     )
@@ -170,6 +174,7 @@ export async function billSnapshot(q: Queryable, id: number): Promise<BillSnapsh
       unit_price_paise: i.unit_price_paise,
       line_total_paise: i.line_total_paise,
       fy_start: i.fy_start,
+      kind: i.kind,
     })),
   };
 }

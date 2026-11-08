@@ -46,7 +46,9 @@ function readFilters(query: Record<string, unknown>) {
   if (status !== null && !STATUSES.includes(status as StatusFilter)) {
     throw new HttpError(400, `status must be one of: ${STATUSES.join(", ")}`);
   }
-  return { q, clientId, fy, status: status as StatusFilter | null };
+  const groupId = query.group_id ? Number(query.group_id) : null;
+  if (groupId !== null && !Number.isInteger(groupId)) throw new HttpError(400, "group_id must be a number");
+  return { q, clientId, fy, status: status as StatusFilter | null, groupId };
 }
 
 export function billRoutes(db: Db, files: ClientFiles): Router {
@@ -62,22 +64,29 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
   });
 
   // Totals for the strip at the top of the Bills page. Cancelled bills are left out. ?fy=2026 limits it to a year.
+  // Fees (the firm's income) are kept apart from amounts paid on clients' behalf. Payments go towards the
+  // paid-on-behalf amount first, then the fees.
   router.get("/summary", async (req, res) => {
-    const { fy } = readFilters(req.query);
+    const { fy, groupId } = readFilters(req.query);
     const late = `${BALANCE_SQL} > 0 AND b.due_date IS NOT NULL AND b.due_date < $2::date`;
     const { rows } = await db.query(
       `SELECT COALESCE(SUM(b.total_paise), 0)::bigint AS billed_paise,
               COALESCE(SUM(cn.credited), 0)::bigint AS credited_paise,
               COALESCE(SUM(d.discounted), 0)::bigint AS discount_paise,
               COALESCE(SUM(p.paid), 0)::bigint AS collected_paise,
+              COALESCE(SUM(b.subtotal_paise), 0)::bigint AS fees_paise,
+              COALESCE(SUM(b.gst_paise), 0)::bigint AS gst_paise,
+              COALESCE(SUM(b.reimbursement_paise), 0)::bigint AS reimbursement_paise,
+              COALESCE(SUM(LEAST(COALESCE(p.paid, 0), b.reimbursement_paise)), 0)::bigint AS reimbursed_paise,
               COALESCE(SUM(GREATEST(${BALANCE_SQL}, 0)), 0)::bigint AS outstanding_paise,
               COUNT(*) FILTER (WHERE ${BALANCE_SQL} > 0)::int AS outstanding_count,
               COALESCE(SUM(GREATEST(${BALANCE_SQL}, 0)) FILTER (WHERE ${late}), 0)::bigint AS overdue_paise,
               COUNT(*) FILTER (WHERE ${late})::int AS overdue_count
        FROM bills b ${PAID_JOIN} ${CREDITED_JOIN} ${DISCOUNT_JOIN}
        WHERE b.status = 'active'
-         AND ($1::int IS NULL OR b.fy_start = $1::int)`,
-      [fy, todayISO()],
+         AND ($1::int IS NULL OR b.fy_start = $1::int)
+         AND ($3::int IS NULL OR b.client_id IN (SELECT id FROM clients WHERE group_id = $3::int))`,
+      [fy, todayISO(), groupId],
     );
     res.json(rows[0]);
   });
@@ -89,7 +98,7 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
     const { sql, params } = billFilterSql(readFilters(req.query), likePattern);
     const total = await db.query<{ n: number }>(`SELECT count(*) AS n ${sql}`, params);
     const { rows } = await db.query(
-      `SELECT ${BILL_LIST_COLUMNS}, ${BILL_ITEMS_SUMMARY} ${sql} ORDER BY b.bill_date DESC, b.id DESC LIMIT $6 OFFSET $7`,
+      `SELECT ${BILL_LIST_COLUMNS}, ${BILL_ITEMS_SUMMARY} ${sql} ORDER BY b.bill_date DESC, b.id DESC LIMIT $7 OFFSET $8`,
       [...params, limit, offset],
     );
     res.json({ items: rows.map((r: any) => withSettlement(r)), total: total.rows[0].n, page, limit });
@@ -135,10 +144,10 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
       const bill = (
         await q.query<{ id: number }>(
           `INSERT INTO bills (bill_no, fy_start, client_id, bill_date, due_date, notes, subtotal_paise,
-                              gst_rate_percent, gst_paise, total_paise, created_by)
-           VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11) RETURNING id`,
+                              gst_rate_percent, gst_paise, reimbursement_paise, total_paise, created_by)
+           VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
           [billNo, fyStart, input.client_id, billDate, dueDate, input.notes, totals.subtotal_paise,
-           rate, totals.gst_paise, totals.total_paise, req.user!.id],
+           rate, totals.gst_paise, totals.reimbursement_paise, totals.total_paise, req.user!.id],
         )
       ).rows[0];
       await insertItems(q, bill.id, input.items, fyStart);
@@ -192,7 +201,7 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
         total_paise: totals.total_paise,
         items: input.items.map((i) => ({
           service_id: i.service_id ?? null, description: i.description, details: i.details, quantity: i.quantity,
-          unit_price_paise: i.unit_price_paise, line_total_paise: i.quantity * i.unit_price_paise, fy_start: i.fy_start ?? row.fy_start,
+          unit_price_paise: i.unit_price_paise, line_total_paise: i.quantity * i.unit_price_paise, fy_start: i.fy_start ?? row.fy_start, kind: i.kind ?? "fee",
         })),
       };
 
@@ -217,9 +226,9 @@ export function billRoutes(db: Db, files: ClientFiles): Router {
 
       await q.query(
         `UPDATE bills SET client_id = $2, bill_date = $3::date, due_date = $4::date, notes = $5,
-                subtotal_paise = $6, gst_paise = $7, total_paise = $8, updated_by = $9, updated_at = now()
+                subtotal_paise = $6, gst_paise = $7, total_paise = $8, updated_by = $9, reimbursement_paise = $10, updated_at = now()
          WHERE id = $1`,
-        [id, input.client_id, newDate, newDue ?? null, input.notes, totals.subtotal_paise, totals.gst_paise, totals.total_paise, req.user!.id],
+        [id, input.client_id, newDate, newDue ?? null, input.notes, totals.subtotal_paise, totals.gst_paise, totals.total_paise, req.user!.id, totals.reimbursement_paise],
       );
       await q.query("DELETE FROM bill_items WHERE bill_id = $1", [id]);
       await insertItems(q, id, input.items, row.fy_start);

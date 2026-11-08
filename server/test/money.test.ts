@@ -10,12 +10,12 @@ describe("calculateTotals", () => {
       ],
       0,
     );
-    expect(t).toEqual({ subtotal_paise: 350_050, gst_paise: 0, total_paise: 350_050 });
+    expect(t).toEqual({ subtotal_paise: 350_050, gst_paise: 0, reimbursement_paise: 0, total_paise: 350_050 });
   });
 
   it("applies 18% GST exactly", () => {
     const t = calculateTotals([{ quantity: 1, unit_price_paise: 100_000 }], 18);
-    expect(t).toEqual({ subtotal_paise: 100_000, gst_paise: 18_000, total_paise: 118_000 });
+    expect(t).toEqual({ subtotal_paise: 100_000, gst_paise: 18_000, reimbursement_paise: 0, total_paise: 118_000 });
   });
 
   it("rounds half a paisa up", () => {

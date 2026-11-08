@@ -20,12 +20,17 @@ export function paiseToInput(paise: number): string {
 }
 
 /** Same integer maths as the server, used for the live preview on the bill form. */
-export function calculateTotals(lines: { quantity: number; unit_price_paise: number }[], gstRatePercent: number) {
-  const subtotal = lines.reduce((sum, l) => sum + l.quantity * l.unit_price_paise, 0);
+export function calculateTotals(lines: { quantity: number; unit_price_paise: number; kind?: ItemKind }[], gstRatePercent: number) {
+  // GST is charged on fees only; amounts paid on the client's behalf are added after it.
+  const subtotal = lines.filter((l) => l.kind !== "reimbursement").reduce((sum, l) => sum + l.quantity * l.unit_price_paise, 0);
+  const reimbursement = lines.filter((l) => l.kind === "reimbursement").reduce((sum, l) => sum + l.quantity * l.unit_price_paise, 0);
   const rateBp = Math.round(gstRatePercent * 100);
   const gst = Math.floor((subtotal * rateBp + 5000) / 10000);
-  return { subtotal_paise: subtotal, gst_paise: gst, total_paise: subtotal + gst };
+  return { subtotal_paise: subtotal, gst_paise: gst, reimbursement_paise: reimbursement, total_paise: subtotal + gst + reimbursement };
 }
+
+/** "fee" = the firm's charge; "reimbursement" = money the firm paid on the client's behalf (no GST, not income). */
+export type ItemKind = "fee" | "reimbursement";
 
 /** Indian financial year (1 Apr - 31 Mar) that a YYYY-MM-DD date falls in, as its start year. 2026-02-10 -> 2025. */
 export function fyStartOf(iso: string): number | null {

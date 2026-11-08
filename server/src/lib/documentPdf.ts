@@ -4,6 +4,8 @@ import * as fontkit from "fontkit";
 import PDFDocument from "pdfkit";
 import type { Settings } from "../routes/settings.js";
 import { METHOD_LABELS, dueLine, fyLongLabel, jurisdictionLine, money, paymentLines, prettyDate, prettyTimestamp, type PaymentMethod } from "./format.js";
+import type { FeesReport } from "./feesReport.js";
+import type { Ledger } from "./ledger.js";
 import { amountInWords } from "./words.js";
 
 /**
@@ -39,8 +41,17 @@ const RED = "#c0301f";
 const GREEN = "#167347";
 
 const PAGE = { width: 595.28, height: 841.89, margin: 42 };
-const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
-const BOTTOM = PAGE.height - PAGE.margin - 8; // content stops here; the footer line sits below it (at height - 30)
+let CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
+let BOTTOM = PAGE.height - PAGE.margin - 8; // content stops here; the footer line sits below it (at height - 30)
+
+/** A4 portrait (bills, ledgers) or landscape (the fees report, which has many columns). */
+function setLayout(layout: "portrait" | "landscape") {
+  const [w, h] = layout === "landscape" ? [841.89, 595.28] : [595.28, 841.89];
+  PAGE.width = w;
+  PAGE.height = h;
+  CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
+  BOTTOM = PAGE.height - PAGE.margin - 8;
+}
 
 interface Run { text: string; face: Face }
 
@@ -384,8 +395,14 @@ function decoratePages(pen: Pen, docLabel: string, stamp: string | null, lastPag
   }
 }
 
-function build(title: string, author: string, draw: (pen: Pen) => { footer: string; stamp: string | null; note?: string }): Promise<Buffer> {
-  const doc = new PDFDocument({ size: "A4", margin: PAGE.margin, bufferPages: true, info: { Title: title, Author: author || "Billing Software" } });
+function build(
+  title: string,
+  author: string,
+  draw: (pen: Pen) => { footer: string; stamp: string | null; note?: string },
+  layout: "portrait" | "landscape" = "portrait",
+): Promise<Buffer> {
+  setLayout(layout);
+  const doc = new PDFDocument({ size: "A4", layout, margin: PAGE.margin, bufferPages: true, info: { Title: title, Author: author || "Billing Software" } });
   const chunks: Buffer[] = [];
   doc.on("data", (c: Buffer) => chunks.push(c));
   const done = new Promise<Buffer>((resolve, reject) => {
@@ -393,8 +410,12 @@ function build(title: string, author: string, draw: (pen: Pen) => { footer: stri
     doc.on("error", reject);
   });
   const pen = new Pen(doc);
-  const { footer, stamp, note } = draw(pen);
-  decoratePages(pen, footer, stamp, note);
+  try {
+    const { footer, stamp, note } = draw(pen);
+    decoratePages(pen, footer, stamp, note);
+  } finally {
+    setLayout("portrait");
+  }
   doc.end();
   return done;
 }
@@ -414,14 +435,16 @@ export function renderBillPdf(bill: any, org: Settings, logo: Logo | null): Prom
       ],
       cancelled ? { text: "CANCELLED", color: RED } : bill.state === "paid" ? { text: "PAID", color: GREEN } : undefined,
     );
-    itemsTable(pen, bill.items, { heading: "Being the charges for services rendered", year: true });
+    const fees = bill.items.filter((i: any) => i.kind !== "reimbursement");
+    const onBehalf = bill.items.filter((i: any) => i.kind === "reimbursement");
+    if (fees.length) itemsTable(pen, fees, { heading: "Being the charges for services rendered", year: true });
+    if (onBehalf.length) itemsTable(pen, onBehalf, { heading: "Paid on your behalf (no GST)", year: false });
 
     const rows: Parameters<typeof totals>[1] = [];
-    if (bill.gst_rate_percent > 0) {
-      rows.push({ label: "Subtotal", value: money(bill.subtotal_paise) });
-      rows.push({ label: `GST @ ${bill.gst_rate_percent}%`, value: money(bill.gst_paise) });
-    }
-    rows.push({ label: "Total", value: money(bill.total_paise), strong: true });
+    if (bill.gst_rate_percent > 0 || bill.reimbursement_paise > 0) rows.push({ label: "Fees", value: money(bill.subtotal_paise) });
+    if (bill.gst_rate_percent > 0) rows.push({ label: `GST @ ${bill.gst_rate_percent}% (on fees)`, value: money(bill.gst_paise) });
+    if (bill.reimbursement_paise > 0) rows.push({ label: "Paid on your behalf", value: money(bill.reimbursement_paise) });
+    rows.push({ label: bill.reimbursement_paise > 0 ? "Total payable" : "Total", value: money(bill.total_paise), strong: true });
     totals(pen, rows);
     inWords(pen, bill.total_paise);
 
@@ -477,4 +500,243 @@ export function renderCreditNotePdf(cn: any, org: Settings, logo: Logo | null): 
     signOff(pen, org);
     return { footer: cn.cn_no, stamp: null, note: jurisdictionLine(org) };
   });
+}
+
+/* ====================================================================== */
+/* Tables for the ledger and the fees report                               */
+/* ====================================================================== */
+
+interface Column { label: string; width: number; align?: "left" | "right"; /** wrap long text onto more lines instead of shortening it */ wrap?: boolean }
+
+/** A simple table: header row (repeated on every new page), rows that shorten text to fit, and bold rows. */
+function grid(pen: Pen, cols: Column[], rows: { cells: string[]; bold?: boolean; muted?: boolean; rule?: boolean }[], size = 8.5) {
+  const scale = CONTENT_WIDTH / cols.reduce((s, c) => s + c.width, 0); // widths are proportions of the page width
+  const widths = cols.map((c) => c.width * scale);
+  const lh = size + 6;
+  const head = () => {
+    let x = PAGE.margin;
+    cols.forEach((c, n) => {
+      const w = widths[n];
+      if (c.align === "right") pen.draw(c.label.toUpperCase(), x + w - 4, pen.y, { size: 7, bold: true, color: MUTED, align: "right" });
+      else pen.draw(c.label.toUpperCase(), x + 2, pen.y, { size: 7, bold: true, color: MUTED });
+      x += w;
+    });
+    pen.y += 11;
+    pen.rule(pen.y, PAGE.margin, PAGE.width - PAGE.margin, INK, 0.9);
+    pen.y += 5;
+  };
+  head();
+  const lineH = size * 1.3;
+  for (const r of rows) {
+    // Wrapped columns may take several lines; the row is as tall as its tallest cell.
+    const cellLines = r.cells.map((cell, n) => (cols[n].wrap ? pen.lines(cell, size, !!r.bold, widths[n] - 6) : [fitTextAt(pen, cell, widths[n] - 6, size, !!r.bold)]));
+    const lines = Math.max(1, ...cellLines.map((l) => l.length));
+    const rowH = lh + (lines - 1) * lineH;
+    pen.ensure(rowH + 2, head);
+    if (r.rule) {
+      pen.rule(pen.y - 2, PAGE.margin, PAGE.width - PAGE.margin, INK, 0.7);
+      pen.y += 2;
+    }
+    let x = PAGE.margin;
+    cellLines.forEach((ls, n) => {
+      const w = widths[n];
+      const o = { size, bold: r.bold, color: r.muted ? MUTED : INK };
+      ls.forEach((text, k) => {
+        if (cols[n].align === "right") pen.draw(text, x + w - 4, pen.y + k * lineH, { ...o, align: "right" });
+        else pen.draw(text, x + 2, pen.y + k * lineH, o);
+      });
+      x += w;
+    });
+    pen.y += rowH;
+    if (!r.rule) pen.rule(pen.y - 4, PAGE.margin, PAGE.width - PAGE.margin, "#eceff3", 0.5);
+  }
+  pen.y += 6;
+}
+
+function fitTextAt(pen: Pen, text: string, width: number, size: number, bold: boolean): string {
+  if (pen.width(text, size, bold) <= width) return text;
+  let t = text;
+  while (t.length > 1 && pen.width(`${t}...`, size, bold) > width) t = t.slice(0, -1);
+  return `${t}...`;
+}
+
+/** A centred title block under the letterhead: e.g. "LEDGER ACCOUNT", with lines of detail. */
+function titleBlock(pen: Pen, title: string, lines: string[]) {
+  pen.draw(title, PAGE.margin, pen.y, { size: 13, bold: true, align: "center", width: CONTENT_WIDTH });
+  pen.y += 18;
+  for (const l of lines) {
+    pen.draw(l, PAGE.margin, pen.y, { size: 9, color: MUTED, align: "center", width: CONTENT_WIDTH });
+    pen.y += 12;
+  }
+  pen.y += 8;
+}
+
+/** Label / value pairs in up to three columns (the summary of a report). */
+function figures(pen: Pen, items: [string, string][], perRow = 3) {
+  const w = CONTENT_WIDTH / perRow;
+  const rows = Math.ceil(items.length / perRow);
+  pen.ensure(rows * 30 + 10);
+  items.forEach(([label, value], n) => {
+    const x = PAGE.margin + (n % perRow) * w;
+    const y = pen.y + Math.floor(n / perRow) * 30;
+    pen.draw(label.toUpperCase(), x, y, { size: 7, bold: true, color: MUTED });
+    pen.draw(value, x, y + 10, { size: 11, bold: true });
+  });
+  pen.y += rows * 30 + 6;
+}
+
+/** "18,000.00": Indian grouping, two decimals, no rupee sign (as on the firm's statements). Negative = in the client's favour. */
+const amt = (paise: number) => {
+  const s = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(paise) / 100);
+  return paise < 0 ? `${s} Cr` : s;
+};
+/** "2026-11-06" -> "06/11/2026" */
+const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+/** ["A", "B", "C"] -> "A, B and C" */
+const andList = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/**
+ * The statement of account sent to a client (or a family group), laid out like the firm's own statement:
+ * letterhead, "STATEMENT OF ACCOUNT AS ON <date>", "To: <name> (<members>)", Date / Particulars / Bill-Ref / Debit /
+ * Credit / Balance with a Total and the OUTSTANDING BALANCE, the bills still pending (receipts applied to the oldest
+ * bill first), and a closing request with the bank details.
+ */
+export function renderLedgerPdf(l: Ledger, org: Settings, logo: Logo | null): Promise<Buffer> {
+  return build(`Statement of account ${l.name}`, org.org_name, (pen) => {
+    letterhead(pen, org, logo);
+    pen.draw(`STATEMENT OF ACCOUNT AS ON ${dmy(l.to)}`, PAGE.margin, pen.y, { size: 12.5, bold: true, align: "center", width: CONTENT_WIDTH });
+    pen.y += 16;
+    if (l.from > l.first_date) {
+      pen.draw(`For the period ${dmy(l.from)} to ${dmy(l.to)}`, PAGE.margin, pen.y, { size: 8.5, color: MUTED, align: "center", width: CONTENT_WIDTH });
+      pen.y += 12;
+    }
+    pen.y += 6;
+    const to = l.kind === "group" && l.members.length ? `${l.name} (${andList(l.members)})` : l.name;
+    pen.ensure(30);
+    pen.draw("To:", PAGE.margin, pen.y, { size: 10, bold: true });
+    const toLines = pen.lines(to, 10, false, CONTENT_WIDTH - 22);
+    toLines.forEach((t, n) => pen.draw(t, PAGE.margin + 22, pen.y + n * 13.5, { size: 10 }));
+    pen.y += toLines.length * 13.5;
+    if (l.client) {
+      const parts = [l.client.address?.replace(/\s*\n\s*/g, ", "), l.client.city, l.client.pan && `PAN: ${l.client.pan}`, l.client.file_no && `File No.: ${l.client.file_no}`].filter(Boolean);
+      if (parts.length) pen.paragraph(parts.join("   "), PAGE.margin + 22, CONTENT_WIDTH - 22, { size: 8.5, color: MUTED });
+    }
+    pen.y += 10;
+
+    const rows: { cells: string[]; bold?: boolean; muted?: boolean; rule?: boolean }[] = [];
+    if (l.opening_paise !== 0 || l.from > l.first_date) {
+      rows.push({ cells: [dmy(l.from), "Opening balance", "", "", "", amt(l.opening_paise)], bold: true });
+    }
+    for (const e of l.entries) {
+      rows.push({ cells: [dmy(e.date), e.particulars, e.ref, e.debit_paise ? amt(e.debit_paise) : "", e.credit_paise ? amt(e.credit_paise) : "", amt(e.balance_paise)] });
+    }
+    if (!l.entries.length) rows.push({ cells: ["", "No transactions in this period", "", "", "", ""], muted: true });
+    const debits = l.entries.reduce((s, e) => s + e.debit_paise, 0);
+    const credits = l.entries.reduce((s, e) => s + e.credit_paise, 0);
+    rows.push({ cells: ["", "Total", "", amt(debits), amt(credits), ""], bold: true, rule: true });
+    rows.push({ cells: ["", l.closing_paise < 0 ? "BALANCE IN YOUR FAVOUR" : "OUTSTANDING BALANCE", "", "", "", amt(Math.abs(l.closing_paise))], bold: true, rule: true });
+    grid(pen, [
+      { label: "Date", width: 64 },
+      { label: "Particulars", width: 230, wrap: true },
+      { label: "Bill / Ref", width: 74 },
+      { label: "Debit", width: 74, align: "right" },
+      { label: "Credit", width: 74, align: "right" },
+      { label: "Balance", width: 80, align: "right" },
+    ], rows, 8.5);
+
+    if (l.pending.length) {
+      pen.ensure(60);
+      pen.draw("Bills pending (receipts applied oldest bill first)", PAGE.margin, pen.y, { size: 9, bold: true });
+      pen.y += 14;
+      const t = l.pending.reduce((s, p) => ({ billed: s.billed + p.billed_paise, received: s.received + p.received_paise, pending: s.pending + p.pending_paise }), { billed: 0, received: 0, pending: 0 });
+      grid(pen, [
+        { label: "Bill No.", width: 90 },
+        { label: "Party", width: 210, wrap: true },
+        { label: "Billed", width: 90, align: "right" },
+        { label: "Received", width: 90, align: "right" },
+        { label: "Pending", width: 90, align: "right" },
+      ], [
+        ...l.pending.map((p) => ({ cells: [p.bill_no, p.client_name, amt(p.billed_paise), amt(p.received_paise), amt(p.pending_paise)] })),
+        { cells: ["Total", "", amt(t.billed), amt(t.received), amt(t.pending)], bold: true, rule: true },
+      ], 8.5);
+    }
+
+    // The closing request, with where to pay.
+    const bank = [
+      org.bank_account_number && `A/c No. ${org.bank_account_number}`,
+      org.bank_name,
+      org.bank_ifsc && `IFSC ${org.bank_ifsc}`,
+    ].filter(Boolean).join(", ");
+    const how = [bank && `transferred to ${bank}`, org.upi_id && `paid by UPI to ${org.upi_id}`].filter(Boolean);
+    const ask =
+      l.closing_paise > 0
+        ? `Kindly clear the outstanding balance of Rs. ${amt(l.closing_paise)} (${amountInWords(l.closing_paise)}) at the earliest.${how.length ? ` Fees can be paid by cheque or ${andList(how).replace(" and ", " or ")}.` : ""}`
+        : l.closing_paise < 0
+          ? `There is a balance of Rs. ${amt(-l.closing_paise)} in your favour as on ${dmy(l.to)}.`
+          : `Nothing is outstanding as on ${dmy(l.to)}. Thank you.`;
+    pen.ensure(40);
+    pen.y += 4;
+    pen.paragraph(ask, PAGE.margin, CONTENT_WIDTH, { size: 9, gap: 6 });
+    pen.draw("E. & O.E.", PAGE.margin, pen.y, { size: 8.5, color: MUTED });
+    pen.y += 16;
+    if (org.signatory_name || org.org_name) signOff(pen, org);
+    return { footer: `Statement of account: ${l.name}`, stamp: null, note: jurisdictionLine(org) };
+  });
+}
+
+export function renderFeesReportPdf(r: FeesReport, org: Settings, logo: Logo | null): Promise<Buffer> {
+  return build("Fees report", org.org_name, (pen) => {
+    letterhead(pen, org, logo);
+    titleBlock(pen, "FEES REPORT", [
+      `${prettyDate(r.from)} to ${prettyDate(r.to)}${r.group_name ? `  ·  Group: ${r.group_name}` : ""}`,
+      `Prepared on ${prettyDate(new Date().toISOString().slice(0, 10))}`,
+    ]);
+    const s = r.summary;
+    pen.draw("SUMMARY", PAGE.margin, pen.y, { size: 8, bold: true, color: MUTED });
+    pen.y += 13;
+    figures(pen, [
+      ["Bills issued", `${s.bills}${s.cancelled ? `  (+${s.cancelled} cancelled)` : ""}`],
+      ["Fees (income)", money(s.fees_paise)],
+      ["GST charged", money(s.gst_paise)],
+      ["Paid on clients' behalf", money(s.reimbursement_paise)],
+      ["Total billed", money(s.total_paise)],
+      ["Received", money(s.received_paise)],
+      ["  of which fees and GST", money(s.fees_received_paise)],
+      ["  of which reimbursed", money(s.reimbursed_paise)],
+      ["Credit notes and discounts", money(s.credited_paise + s.discount_paise)],
+      ["Outstanding", money(s.outstanding_paise)],
+    ], 5);
+
+    if (r.months.length) {
+      pen.draw("MONTH BY MONTH", PAGE.margin, pen.y, { size: 8, bold: true, color: MUTED });
+      pen.y += 13;
+      grid(pen, [
+        { label: "Month", width: 90 }, { label: "Bills", width: 50, align: "right" }, { label: "Fees (₹)", width: 100, align: "right" },
+        { label: "GST (₹)", width: 90, align: "right" }, { label: "Paid on behalf (₹)", width: 110, align: "right" }, { label: "Received (₹)", width: 100, align: "right" },
+      ], [
+        ...r.months.map((m) => ({ cells: [m.month, String(m.bills), money(m.fees_paise), money(m.gst_paise), money(m.reimbursement_paise), money(m.received_paise)] })),
+        { cells: ["Total", String(s.bills), money(s.fees_paise), money(s.gst_paise), money(s.reimbursement_paise), money(s.received_paise)], bold: true, rule: true },
+      ], 8.5);
+    }
+
+    pen.ensure(60);
+    pen.draw("BILLS", PAGE.margin, pen.y, { size: 8, bold: true, color: MUTED });
+    pen.y += 13;
+    grid(pen, [
+      { label: "Bill no.", width: 70 }, { label: "Date", width: 58 }, { label: "Client", width: 130, wrap: true }, { label: "Group", width: 80, wrap: true },
+      { label: "Fees", width: 66, align: "right" }, { label: "GST", width: 56, align: "right" }, { label: "On behalf", width: 62, align: "right" },
+      { label: "Total", width: 68, align: "right" }, { label: "Received", width: 68, align: "right" }, { label: "Cr./disc.", width: 58, align: "right" },
+      { label: "Balance", width: 66, align: "right" }, { label: "Status", width: 58 },
+    ], [
+      ...r.rows.map((b) => ({
+        muted: b.cancelled,
+        cells: [b.bill_no, prettyDate(b.bill_date), b.client_name, b.group_name ?? "", money(b.fees_paise), money(b.gst_paise), b.reimbursement_paise ? money(b.reimbursement_paise) : "",
+          money(b.total_paise), money(b.received_paise), b.reduced_paise ? money(b.reduced_paise) : "", b.cancelled ? "" : money(b.balance_paise), b.status],
+      })),
+      ...(r.rows.length ? [] : [{ cells: ["No bills in this period", "", "", "", "", "", "", "", "", "", "", ""], muted: true }]),
+      { cells: ["Total", "", "", "", money(s.fees_paise), money(s.gst_paise), money(s.reimbursement_paise), money(s.total_paise), money(s.received_paise), money(s.credited_paise + s.discount_paise), money(s.outstanding_paise), ""], bold: true, rule: true },
+    ], 7.5);
+    pen.paragraph("Fees are the firm's income. GST and amounts paid on clients' behalf are shown separately and are not income. Cancelled bills are listed but not counted in any total.", PAGE.margin, CONTENT_WIDTH, { size: 8, color: MUTED });
+    return { footer: `Fees report ${prettyDate(r.from)} to ${prettyDate(r.to)}`, stamp: null };
+  }, "landscape");
 }

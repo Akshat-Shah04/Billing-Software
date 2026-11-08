@@ -8,7 +8,7 @@ import Sheet from "../components/Sheet";
 import { useLoad } from "../hooks";
 import type { User } from "../types";
 
-const EMPTY = { username: "", full_name: "", password: "", role: "staff" as User["role"] };
+const EMPTY = { username: "", full_name: "", password: "", role: "staff" as User["role"], email: "" };
 
 export default function Staff() {
   const { user: me } = useAuth();
@@ -16,6 +16,8 @@ export default function Staff() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [resetting, setResetting] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({ full_name: "", email: "" });
   const [newPassword, setNewPassword] = useState("");
   const [sheetError, setSheetError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -48,6 +50,22 @@ export default function Staff() {
     } catch (err) {
       setActionError((err as Error).message);
       return false;
+    }
+  }
+
+  async function saveUser() {
+    if (!editingUser) return;
+    setSaving(true);
+    setSheetError("");
+    try {
+      await api(`/users/${editingUser.id}`, { method: "PATCH", body: editForm });
+      setMessage(`${editForm.full_name.trim()} saved.`);
+      setEditingUser(null);
+      reload();
+    } catch (err) {
+      setSheetError((err as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -103,11 +121,23 @@ export default function Staff() {
                   <td>
                     <strong style={{ fontWeight: 600 }}>{u.full_name}</strong>
                     {u.id === me?.id && <span className="muted tiny"> (you)</span>}
+                    {u.email && <div className="muted tiny">{u.email}</div>}
+                    {u.role === "admin" && !u.email && <div className="tiny" style={{ color: "var(--warn)" }}>No email: can’t use “Forgot password”</div>}
                   </td>
                   <td>{u.username}</td>
                   <td style={{ textTransform: "capitalize" }}>{u.role}</td>
                   <td>{u.is_active ? <span className="badge ok">Active</span> : <span className="badge neutral">Deactivated</span>}</td>
                   <td className="right nowrap">
+                    <button
+                      className="link"
+                      onClick={() => {
+                        setEditForm({ full_name: u.full_name, email: u.email ?? "" });
+                        setSheetError("");
+                        setEditingUser(u);
+                      }}
+                    >
+                      Edit
+                    </button>
                     <button
                       className="link"
                       onClick={() => {
@@ -163,11 +193,39 @@ export default function Staff() {
             <div className="hint">{form.password.length > 0 && form.password.length < 8 ? `${8 - form.password.length} more characters needed` : "At least 8 characters."}</div>
           </div>
           <div className="field">
+            <label htmlFor="u-email">Email (optional)</label>
+            <input id="u-email" type="email" maxLength={150} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <div className="hint">Administrators need one to use “Forgot password”.</div>
+          </div>
+          <div className="field">
             <label htmlFor="u-role">Role</label>
             <select id="u-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as User["role"] })}>
               <option value="staff">Staff</option>
               <option value="admin">Admin</option>
             </select>
+          </div>
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={editingUser !== null}
+        title={`Edit ${editingUser?.full_name ?? ""}`}
+        subtitle={editingUser?.role === "admin" ? "A “Forgot password” link is sent to this email address." : "Staff can’t reset their own password; an administrator does it here."}
+        onClose={() => setEditingUser(null)}
+        onSubmit={saveUser}
+        submitLabel="Save"
+        busy={saving}
+        submitDisabled={!editForm.full_name.trim()}
+      >
+        {sheetError && <Message kind="error">{sheetError}</Message>}
+        <div className="grid two">
+          <div className="field">
+            <label htmlFor="e-name">Full name</label>
+            <input id="e-name" autoFocus maxLength={100} value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="e-email">Email</label>
+            <input id="e-email" type="email" maxLength={150} placeholder="name@yourfirm.in" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
           </div>
         </div>
       </Sheet>
