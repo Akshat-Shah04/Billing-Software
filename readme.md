@@ -294,11 +294,3 @@ Client Files/
   in the installer wizard when installed). Admins can see the location, the last error, and press
   **Rebuild all client folders now** under Settings.
 - If the disk cannot be written to, bills still save and Settings shows the error.
-
-## Known limitations (ideas for v0.3)
-
-- GST is one flat rate (no CGST/SGST/IGST split, HSN/SAC codes or GST reports).
-- WhatsApp sending opens the chat with the message ready; the PDF has to be attached by hand (a link cannot attach files).
-- No email sending.
-- The login rate limit is in memory, so it resets when the server restarts.
-- The installer is not code-signed, so Windows SmartScreen shows "unknown publisher".
