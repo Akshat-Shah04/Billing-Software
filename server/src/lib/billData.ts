@@ -79,7 +79,7 @@ export async function getBill(q: Queryable, id: number) {
               b.notes, b.status, b.cancelled_at, b.cancel_reason, xu.full_name AS cancelled_by_name,
               b.subtotal_paise, b.gst_rate_percent, b.gst_paise, b.total_paise,
               b.client_id, c.name AS client_name, c.phone AS client_phone, c.city AS client_city,
-              c.address AS client_address, c.gstin AS client_gstin, c.pan AS client_pan,
+              c.address AS client_address, c.gstin AS client_gstin, c.pan AS client_pan, c.file_no AS client_file_no,
               b.created_at, b.updated_at,
               cu.full_name AS created_by_name, uu.full_name AS updated_by_name
        FROM bills b
@@ -181,7 +181,7 @@ export async function getCreditNote(q: Queryable, id: number) {
               n.total_paise, n.created_at, u.full_name AS created_by_name,
               b.id AS bill_id, b.bill_no, b.bill_date::text AS bill_date,
               c.id AS client_id, c.name AS client_name, c.phone AS client_phone, c.city AS client_city,
-              c.address AS client_address, c.gstin AS client_gstin, c.pan AS client_pan
+              c.address AS client_address, c.gstin AS client_gstin, c.pan AS client_pan, c.file_no AS client_file_no
        FROM credit_notes n
        JOIN bills b ON b.id = n.bill_id
        JOIN clients c ON c.id = b.client_id

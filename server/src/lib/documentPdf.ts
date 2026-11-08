@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import * as fontkit from "fontkit";
 import PDFDocument from "pdfkit";
 import type { Settings } from "../routes/settings.js";
-import { METHOD_LABELS, fyLabelOf, money, paymentLines, prettyDate, prettyTimestamp, type PaymentMethod } from "./format.js";
+import { METHOD_LABELS, dueLine, fyLongLabel, jurisdictionLine, money, paymentLines, prettyDate, prettyTimestamp, type PaymentMethod } from "./format.js";
+import { amountInWords } from "./words.js";
 
 /**
  * Makes a bill or credit note as a PDF file, ready to download or send on WhatsApp.
@@ -39,7 +40,7 @@ const GREEN = "#167347";
 
 const PAGE = { width: 595.28, height: 841.89, margin: 42 };
 const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
-const BOTTOM = PAGE.height - PAGE.margin - 18; // leave room for the footer
+const BOTTOM = PAGE.height - PAGE.margin - 8; // content stops here; the footer line sits below it (at height - 30)
 
 interface Run { text: string; face: Face }
 
@@ -136,89 +137,163 @@ class Pen {
 
 interface Logo { contentType: string; data: Buffer }
 
-function header(pen: Pen, org: Settings, logo: Logo | null, right: { label?: string; number: string; lines: { text: string; bold?: boolean; color?: string }[]; tag?: { text: string; color: string } }) {
-  const { doc } = pen;
-  const rightW = 190;
-  const leftW = CONTENT_WIDTH - rightW - 16;
-  let ly = pen.y;
+/** Lines of text centred across the page, wrapped to the content width. */
+function centred(pen: Pen, text: string, o: { size: number; bold?: boolean; color?: string; gap?: number }) {
+  const lh = o.size * 1.3;
+  for (const paragraph of String(text).split(/\r?\n/)) {
+    for (const l of pen.lines(paragraph, o.size, o.bold ?? false, CONTENT_WIDTH)) {
+      pen.draw(l, PAGE.margin, pen.y, { size: o.size, bold: o.bold, color: o.color, align: "center", width: CONTENT_WIDTH });
+      pen.y += lh;
+    }
+  }
+  pen.y += o.gap ?? 0;
+}
 
+/** The firm's letterhead, centred: logo, name, the line under it, address, mobile and GSTIN. */
+function letterhead(pen: Pen, org: Settings, logo: Logo | null) {
+  const { doc } = pen;
   if (logo) {
     try {
       const img = (doc as unknown as { openImage(b: Buffer): { width: number; height: number } }).openImage(logo.data);
-      const scale = Math.min(190 / img.width, 62 / img.height, 1);
-      doc.image(logo.data, PAGE.margin, ly, { width: img.width * scale });
-      ly += img.height * scale + 8;
+      const scale = Math.min(170 / img.width, 56 / img.height, 1);
+      const w = img.width * scale;
+      doc.image(logo.data, (PAGE.width - w) / 2, pen.y, { width: w });
+      pen.y += img.height * scale + 8;
     } catch {
       /* an unreadable logo is skipped rather than failing the whole document */
     }
   }
-  pen.y = ly;
-  pen.paragraph(org.org_name || "Bill", PAGE.margin, leftW, { size: 16, bold: true, gap: 2 });
-  if (org.org_address) pen.paragraph(org.org_address, PAGE.margin, leftW, { size: 8.8, color: MUTED });
-  if (org.org_gstin) pen.paragraph(`GSTIN: ${org.org_gstin}`, PAGE.margin, leftW, { size: 8.8, color: MUTED });
-  const leftEnd = pen.y;
-
-  let ry = PAGE.margin;
-  const rx = PAGE.width - PAGE.margin;
-  if (right.label) { pen.draw(right.label, rx, ry, { size: 9, bold: true, color: MUTED, align: "right" }); ry += 14; }
-  pen.draw(right.number, rx, ry, { size: 14, bold: true, align: "right" }); ry += 20;
-  for (const l of right.lines) { pen.draw(l.text, rx, ry, { size: 9.5, bold: l.bold, color: l.color ?? MUTED, align: "right" }); ry += 13; }
-  if (right.tag) { pen.draw(right.tag.text, rx, ry + 2, { size: 10, bold: true, color: right.tag.color, align: "right" }); ry += 18; }
-
-  pen.y = Math.max(leftEnd, ry) + 14;
-  pen.rule(pen.y);
+  centred(pen, org.org_name || "Bill", { size: 18, bold: true, gap: 1 });
+  if (org.org_tagline) centred(pen, org.org_tagline.toUpperCase(), { size: 8.5, bold: true, color: MUTED, gap: 3 });
+  if (org.org_address) centred(pen, org.org_address, { size: 9, color: INK });
+  const contact = [org.org_mobile && `Mobile: ${org.org_mobile}`, org.org_gstin && `GSTIN: ${org.org_gstin}`].filter(Boolean).join("     ");
+  if (contact) centred(pen, contact, { size: 9, bold: true });
+  pen.y += 8;
+  pen.rule(pen.y, PAGE.margin, PAGE.width - PAGE.margin, INK, 1);
   pen.y += 14;
 }
 
-function billedTo(pen: Pen, d: any) {
-  pen.draw("BILLED TO", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
+/** "To" the client on the left; the document title and its numbers in a box on the right. */
+function partyAndTitle(
+  pen: Pen,
+  d: any,
+  title: string,
+  rows: [string, string][],
+  tag?: { text: string; color: string },
+) {
+  const top = pen.y;
+  const boxW = 210;
+  const boxX = PAGE.width - PAGE.margin - boxW;
+  const leftW = boxX - PAGE.margin - 18;
+
+  // Left: the client.
+  pen.draw("TO", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
   pen.y += 12;
-  pen.paragraph(d.client_name, PAGE.margin, CONTENT_WIDTH * 0.6, { size: 11.5, bold: true });
-  if (d.client_address) pen.paragraph(d.client_address, PAGE.margin, CONTENT_WIDTH * 0.6, { size: 9, color: MUTED });
-  const meta = [d.client_city, d.client_phone].filter(Boolean).join(" · ");
-  if (meta) pen.paragraph(meta, PAGE.margin, CONTENT_WIDTH * 0.6, { size: 9, color: MUTED });
-  if (d.client_gstin) pen.paragraph(`GSTIN: ${d.client_gstin}`, PAGE.margin, CONTENT_WIDTH * 0.6, { size: 9, color: MUTED });
-  if (d.client_pan) pen.paragraph(`PAN: ${d.client_pan}`, PAGE.margin, CONTENT_WIDTH * 0.6, { size: 9, color: MUTED });
-  pen.y += 12;
+  pen.paragraph(d.client_name, PAGE.margin, leftW, { size: 12, bold: true, gap: 1 });
+  if (d.client_address) pen.paragraph(d.client_address, PAGE.margin, leftW, { size: 9 });
+  if (d.client_city) pen.paragraph(d.client_city, PAGE.margin, leftW, { size: 9 });
+  const ids = [d.client_pan && `PAN: ${d.client_pan}`, d.client_gstin && `GSTIN: ${d.client_gstin}`].filter(Boolean).join("     ");
+  if (ids) pen.paragraph(ids, PAGE.margin, leftW, { size: 9, bold: true });
+  if (d.client_phone) pen.paragraph(`Mobile: ${d.client_phone}`, PAGE.margin, leftW, { size: 9, color: MUTED });
+  const leftEnd = pen.y;
+
+  // Right: title and numbers, boxed.
+  const padding = 10;
+  const rowH = 15;
+  const boxH = padding + 18 + rows.length * rowH + padding - 4;
+  pen.doc.roundedRect(boxX, top, boxW, boxH, 5).lineWidth(0.9).strokeColor("#aab2c0").stroke();
+  pen.draw(title, boxX, top + padding, { size: 12.5, bold: true, align: "center", width: boxW });
+  let ry = top + padding + 22;
+  for (const [label, value] of rows) {
+    pen.draw(label, boxX + padding, ry, { size: 9, color: MUTED });
+    pen.draw(value, boxX + boxW - padding, ry, { size: 9.5, bold: true, align: "right" });
+    ry += rowH;
+  }
+  let boxEnd = top + boxH;
+  if (tag) {
+    pen.draw(tag.text, boxX + boxW, boxEnd + 6, { size: 10, bold: true, color: tag.color, align: "right" });
+    boxEnd += 22;
+  }
+  pen.y = Math.max(leftEnd, boxEnd) + 16;
 }
 
-const COLS = { qty: 56, price: 84, amount: 92 }; // "qty" is the financial year column now
-
-function itemsTable(pen: Pen, items: any[]) {
+/** Sr. | Particulars | Year | Amount. A quantity is shown under the description only when it is more than one. */
+function itemsTable(pen: Pen, items: any[], o: { heading: string; year: boolean }) {
   const right = PAGE.width - PAGE.margin;
   const xAmount = right;
-  const xPrice = right - COLS.amount;
-  const xQty = xPrice - COLS.price;
-  const itemW = xQty - COLS.qty - PAGE.margin - 8;
+  const amountW = 100;
+  const yearW = o.year ? 92 : 0;
+  const xYear = xAmount - amountW; // right edge of the year column
+  const srW = 26;
+  const xText = PAGE.margin + srW;
+  const textW = xYear - yearW - xText - 10;
 
   const head = () => {
-    pen.draw("ITEM", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
-    pen.draw("FY", xQty, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
-    pen.draw("PRICE", xPrice, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
-    pen.draw("AMOUNT", xAmount, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
+    pen.draw("SR.", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
+    pen.draw(o.heading.toUpperCase(), xText, pen.y, { size: 7.5, bold: true, color: MUTED });
+    if (o.year) pen.draw("YEAR", xYear - 6, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
+    pen.draw("AMOUNT (₹)", xAmount, pen.y, { size: 7.5, bold: true, color: MUTED, align: "right" });
     pen.y += 13;
-    pen.rule(pen.y, PAGE.margin, right, "#aab2c0", 0.8);
+    pen.rule(pen.y, PAGE.margin, right, INK, 0.9);
     pen.y += 8;
   };
   head();
 
-  for (const it of items) {
-    // The title is much larger and bolder than its description underneath, as on screen.
-    const titleLines = pen.lines(it.description, 11.5, true, itemW);
-    const detailLines = it.details ? pen.lines(it.details, 8.5, false, itemW) : [];
-    const height = titleLines.length * 15 + (detailLines.length ? 3 + detailLines.length * 11.5 : 0) + 10;
+  items.forEach((it, n) => {
+    const titleLines = pen.lines(it.description, 11, true, textW);
+    const extra = [it.details, it.quantity > 1 ? `${it.quantity} × ${money(it.unit_price_paise)}` : ""].filter(Boolean).join("\n");
+    const detailLines = extra ? pen.lines(extra, 8.5, false, textW) : [];
+    const height = titleLines.length * 14.5 + (detailLines.length ? 3 + detailLines.length * 11.5 : 0) + 10;
     pen.ensure(height + 4, head);
-    titleLines.forEach((l, n) => pen.draw(l, PAGE.margin, pen.y + n * 15, { size: 11.5, bold: true }));
-    detailLines.forEach((l, n) => pen.draw(l, PAGE.margin, pen.y + titleLines.length * 15 + 3 + n * 11.5, { size: 8.5, color: MUTED }));
-    pen.draw(it.fy_start ? fyLabelOf(it.fy_start) : "", xQty, pen.y + 1.5, { size: 10, align: "right" });
-    pen.draw(money(it.unit_price_paise), xPrice, pen.y + 1.5, { size: 10, align: "right" });
-    // A quantity is only shown when it is more than one (older bills), under the price.
-    if (it.quantity > 1) pen.draw(`x ${it.quantity}`, xPrice, pen.y + 15, { size: 8.5, color: MUTED, align: "right" });
+    pen.draw(String(n + 1), PAGE.margin, pen.y + 1, { size: 10 });
+    titleLines.forEach((l, k) => pen.draw(l, xText, pen.y + k * 14.5, { size: 11, bold: true }));
+    detailLines.forEach((l, k) => pen.draw(l, xText, pen.y + titleLines.length * 14.5 + 3 + k * 11.5, { size: 8.5, color: MUTED }));
+    if (o.year && it.fy_start) pen.draw(fyLongLabel(it.fy_start), xYear - 6, pen.y + 1.5, { size: 9.5, align: "right" });
     pen.draw(money(it.line_total_paise), xAmount, pen.y + 1.5, { size: 10, bold: true, align: "right" });
     pen.y += height;
     pen.rule(pen.y - 5);
-  }
+  });
   pen.y += 6;
+}
+
+/** The total in words on the left and "E.& O.E." on the right, under the totals. */
+function inWords(pen: Pen, paise: number) {
+  const words = amountInWords(paise);
+  const lines = pen.lines(words, 10, true, CONTENT_WIDTH - 90);
+  pen.ensure(16 + lines.length * 13.5);
+  pen.draw("AMOUNT IN WORDS", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
+  pen.draw("E.& O.E.", PAGE.width - PAGE.margin, pen.y, { size: 8.5, bold: true, color: MUTED, align: "right" });
+  pen.y += 12;
+  lines.forEach((l, k) => pen.draw(l, PAGE.margin, pen.y + k * 13.5, { size: 10, bold: true }));
+  pen.y += lines.length * 13.5 + 12;
+}
+
+/** Remarks: the due date and any notes. */
+function remarks(pen: Pen, lines: string[]) {
+  const text = lines.filter(Boolean).join("\n");
+  if (!text) return;
+  pen.ensure(40);
+  pen.draw("REMARKS", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
+  pen.y += 12;
+  pen.paragraph(text, PAGE.margin, CONTENT_WIDTH, { size: 9.5, gap: 10 });
+}
+
+/**
+ * "For, <firm>" with room to sign and the signatory's name on the right, the firm's state on the left.
+ * (The jurisdiction line goes in the footer of the last page, so this block stays compact.)
+ */
+function signOff(pen: Pen, org: Settings) {
+  pen.ensure(66);
+  pen.y += 2;
+  const right = PAGE.width - PAGE.margin;
+  const top = pen.y;
+  pen.draw(`For, ${org.org_name || "the firm"}`, right, top, { size: 10, bold: true, align: "right" });
+  const signY = top + 36; // room for the signature
+  pen.rule(signY - 4, right - 170, right, "#aab2c0", 0.7);
+  pen.draw(org.signatory_name || "Authorised Signatory", right, signY, { size: 9.5, bold: !!org.signatory_name, align: "right" });
+  if (org.signatory_name) pen.draw("Authorised Signatory", right, signY + 13, { size: 8, color: MUTED, align: "right" });
+  if (org.org_state) pen.draw(`State: ${org.org_state}`, PAGE.margin, signY, { size: 9.5, bold: true });
+  pen.y = signY + 26;
 }
 
 function totals(pen: Pen, rows: { label: string; value: string; strong?: boolean; color?: string }[]) {
@@ -286,8 +361,8 @@ function paymentBox(pen: Pen, org: Settings) {
   pen.y = top + height + 12;
 }
 
-/** Page numbers, a faint stamp on cancelled bills, and the document number on every page. */
-function decoratePages(pen: Pen, docLabel: string, stamp: string | null) {
+/** Page numbers, a faint stamp on cancelled bills, the document number on every page, and a centred line on the last page. */
+function decoratePages(pen: Pen, docLabel: string, stamp: string | null, lastPageNote = "") {
   const { doc } = pen;
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
@@ -303,10 +378,13 @@ function decoratePages(pen: Pen, docLabel: string, stamp: string | null) {
     }
     pen.draw(docLabel, PAGE.margin, PAGE.height - 30, { size: 8, color: MUTED });
     pen.draw(`Page ${i + 1} of ${range.count}`, PAGE.width - PAGE.margin, PAGE.height - 30, { size: 8, color: MUTED, align: "right" });
+    if (lastPageNote && i === range.count - 1) {
+      pen.draw(lastPageNote, PAGE.margin, PAGE.height - 30, { size: 8.5, bold: true, color: INK, align: "center", width: CONTENT_WIDTH });
+    }
   }
 }
 
-function build(title: string, author: string, draw: (pen: Pen) => { footer: string; stamp: string | null }): Promise<Buffer> {
+function build(title: string, author: string, draw: (pen: Pen) => { footer: string; stamp: string | null; note?: string }): Promise<Buffer> {
   const doc = new PDFDocument({ size: "A4", margin: PAGE.margin, bufferPages: true, info: { Title: title, Author: author || "Billing Software" } });
   const chunks: Buffer[] = [];
   doc.on("data", (c: Buffer) => chunks.push(c));
@@ -315,8 +393,8 @@ function build(title: string, author: string, draw: (pen: Pen) => { footer: stri
     doc.on("error", reject);
   });
   const pen = new Pen(doc);
-  const { footer, stamp } = draw(pen);
-  decoratePages(pen, footer, stamp);
+  const { footer, stamp, note } = draw(pen);
+  decoratePages(pen, footer, stamp, note);
   doc.end();
   return done;
 }
@@ -324,36 +402,45 @@ function build(title: string, author: string, draw: (pen: Pen) => { footer: stri
 export function renderBillPdf(bill: any, org: Settings, logo: Logo | null): Promise<Buffer> {
   const cancelled = bill.status === "cancelled";
   return build(`Bill ${bill.bill_no}`, org.org_name, (pen) => {
-    header(pen, org, logo, {
-      number: bill.bill_no,
-      lines: [
-        { text: prettyDate(bill.bill_date), bold: true, color: INK },
-        ...(bill.due_date && !cancelled ? [{ text: `Due ${prettyDate(bill.due_date)}` }] : []),
+    letterhead(pen, org, logo);
+    partyAndTitle(
+      pen,
+      bill,
+      "PROFESSIONAL INVOICE",
+      [
+        ["Bill No.", bill.bill_no],
+        ["Date", prettyDate(bill.bill_date)],
+        ...(bill.client_file_no ? ([["File No.", bill.client_file_no]] as [string, string][]) : []),
       ],
-      tag: cancelled ? { text: "CANCELLED", color: RED } : bill.state === "paid" ? { text: "PAID", color: GREEN } : undefined,
-    });
-    billedTo(pen, bill);
-    itemsTable(pen, bill.items);
+      cancelled ? { text: "CANCELLED", color: RED } : bill.state === "paid" ? { text: "PAID", color: GREEN } : undefined,
+    );
+    itemsTable(pen, bill.items, { heading: "Being the charges for services rendered", year: true });
 
-    const rows: Parameters<typeof totals>[1] = [{ label: "Subtotal", value: money(bill.subtotal_paise) }];
-    if (bill.gst_rate_percent > 0) rows.push({ label: `GST @ ${bill.gst_rate_percent}%`, value: money(bill.gst_paise) });
+    const rows: Parameters<typeof totals>[1] = [];
+    if (bill.gst_rate_percent > 0) {
+      rows.push({ label: "Subtotal", value: money(bill.subtotal_paise) });
+      rows.push({ label: `GST @ ${bill.gst_rate_percent}%`, value: money(bill.gst_paise) });
+    }
     rows.push({ label: "Total", value: money(bill.total_paise), strong: true });
-    if (bill.credited_paise > 0) rows.push({ label: "Credit notes", value: `- ${money(bill.credited_paise)}` });
-    if (bill.paid_paise > 0) rows.push({ label: "Paid", value: `- ${money(bill.paid_paise)}` });
-    if (bill.discount_paise > 0) rows.push({ label: "Discount", value: `- ${money(bill.discount_paise)}` });
-    if (bill.credited_paise > 0 || bill.paid_paise > 0 || bill.discount_paise > 0) rows.push({ label: "Balance due", value: money(bill.balance_paise), strong: true });
     totals(pen, rows);
+    inWords(pen, bill.total_paise);
+
+    // What has happened since the bill was issued (only when something has).
+    if (bill.credited_paise > 0 || bill.paid_paise > 0 || bill.discount_paise > 0) {
+      const after: Parameters<typeof totals>[1] = [];
+      if (bill.credited_paise > 0) after.push({ label: "Credit notes", value: `- ${money(bill.credited_paise)}` });
+      if (bill.paid_paise > 0) after.push({ label: "Paid", value: `- ${money(bill.paid_paise)}` });
+      if (bill.discount_paise > 0) after.push({ label: "Discount", value: `- ${money(bill.discount_paise)}` });
+      after.push({ label: "Balance due", value: money(bill.balance_paise), strong: true });
+      totals(pen, after);
+    }
 
     if (cancelled) {
       pen.ensure(40);
       pen.paragraph(`This bill was cancelled on ${prettyTimestamp(bill.cancelled_at)}${bill.cancelled_by_name ? ` by ${bill.cancelled_by_name}` : ""}: ${bill.cancel_reason}`, PAGE.margin, CONTENT_WIDTH, { size: 9.5, color: RED, gap: 8 });
     }
-    if (bill.notes) {
-      pen.ensure(40);
-      pen.draw("NOTES", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
-      pen.y += 12;
-      pen.paragraph(bill.notes, PAGE.margin, CONTENT_WIDTH, { size: 9.5, gap: 8 });
-    }
+    remarks(pen, [cancelled ? "" : dueLine(bill.due_date), bill.notes ?? ""]);
+
     const payments = (bill.payments ?? []).filter((p: any) => !p.voided_at);
     if (payments.length) {
       section(pen, "Payments received", payments.map((p: any) => [prettyDate(p.paid_on), `${METHOD_LABELS[p.method as PaymentMethod] ?? p.method}${p.reference ? ` - ${p.reference}` : ""}`, money(p.amount_paise)]), [90, CONTENT_WIDTH - 90 - 110, 110], ["left", "left", "right"]);
@@ -362,28 +449,32 @@ export function renderBillPdf(bill: any, org: Settings, logo: Logo | null): Prom
       section(pen, "Credit notes", bill.credit_notes.map((c: any) => [c.cn_no, prettyDate(c.cn_date), money(c.total_paise)]), [150, CONTENT_WIDTH - 150 - 110, 110], ["left", "left", "right"]);
     }
     if (!cancelled) paymentBox(pen, org);
-    return { footer: bill.bill_no, stamp: cancelled ? "CANCELLED" : null };
+    signOff(pen, org);
+    return { footer: bill.bill_no, stamp: cancelled ? "CANCELLED" : null, note: jurisdictionLine(org) };
   });
 }
 
 export function renderCreditNotePdf(cn: any, org: Settings, logo: Logo | null): Promise<Buffer> {
   return build(`Credit note ${cn.cn_no}`, org.org_name, (pen) => {
-    header(pen, org, logo, {
-      label: "CREDIT NOTE",
-      number: cn.cn_no,
-      lines: [{ text: prettyDate(cn.cn_date), bold: true, color: INK }, { text: `Against bill ${cn.bill_no}` }, { text: `dated ${prettyDate(cn.bill_date)}` }],
-    });
-    billedTo(pen, cn);
-    itemsTable(pen, cn.items);
-    const rows: Parameters<typeof totals>[1] = [{ label: "Subtotal", value: money(cn.subtotal_paise) }];
-    if (cn.gst_rate_percent > 0) rows.push({ label: `GST @ ${cn.gst_rate_percent}%`, value: money(cn.gst_paise) });
+    letterhead(pen, org, logo);
+    partyAndTitle(pen, cn, "CREDIT NOTE", [
+      ["Credit note No.", cn.cn_no],
+      ["Date", prettyDate(cn.cn_date)],
+      ["Against bill", cn.bill_no],
+      ["Bill date", prettyDate(cn.bill_date)],
+      ...(cn.client_file_no ? ([["File No.", cn.client_file_no]] as [string, string][]) : []),
+    ]);
+    itemsTable(pen, cn.items, { heading: "Particulars", year: false });
+    const rows: Parameters<typeof totals>[1] = [];
+    if (cn.gst_rate_percent > 0) {
+      rows.push({ label: "Subtotal", value: money(cn.subtotal_paise) });
+      rows.push({ label: `GST @ ${cn.gst_rate_percent}%`, value: money(cn.gst_paise) });
+    }
     rows.push({ label: "Credit total", value: money(cn.total_paise), strong: true });
     totals(pen, rows);
-    pen.ensure(50);
-    pen.draw("REASON", PAGE.margin, pen.y, { size: 7.5, bold: true, color: MUTED });
-    pen.y += 12;
-    pen.paragraph(cn.reason, PAGE.margin, CONTENT_WIDTH, { size: 9.5, gap: 8 });
-    pen.paragraph(`This credit note reduces the amount due on bill ${cn.bill_no}.`, PAGE.margin, CONTENT_WIDTH, { size: 8.5, color: MUTED });
-    return { footer: cn.cn_no, stamp: null };
+    inWords(pen, cn.total_paise);
+    remarks(pen, [`Reason: ${cn.reason}`, `This credit note reduces the amount due on bill ${cn.bill_no}.`]);
+    signOff(pen, org);
+    return { footer: cn.cn_no, stamp: null, note: jurisdictionLine(org) };
   });
 }

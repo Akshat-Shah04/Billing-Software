@@ -41,3 +41,12 @@ export function paymentLines(org: Settings): [string, string][] {
 }
 
 export const fyLabelOf = (start: number): string => `${start}-${String(start + 1).slice(2)}`;
+
+/** 2025 -> "FY 2025-2026", as printed in the Year column of a bill. */
+export const fyLongLabel = (start: number): string => `FY ${start}-${start + 1}`;
+
+/** The line under a bill's payment details: "Subject to Ahmedabad jurisdiction." (nothing when no city is set). */
+export const jurisdictionLine = (org: Settings): string => (org.jurisdiction?.trim() ? `Subject to ${org.jurisdiction.trim()} jurisdiction.` : "");
+
+/** "Payment due by 22 Nov 2026." for the bill's remarks. */
+export const dueLine = (dueDate: string | null): string => (dueDate ? `Payment due by ${prettyDate(dueDate)}.` : "");

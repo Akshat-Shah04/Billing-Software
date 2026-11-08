@@ -91,13 +91,22 @@ describe("client folders", () => {
     expect(html).toMatch(/\.it\{font-size:1\.1rem;font-weight:700/);
     expect(html).toMatch(/\.d\{[^}]*font-size:\.8rem/);
     expect(html).toContain("05 Nov 2026");
-    // The financial year is shown per item (FY column), not as a line at the top of the bill.
+    // The financial year is shown per item (Year column, as "FY 2026-2027"), not as a line at the top of the bill.
     expect(html).not.toContain("Financial year");
-    expect(html).toContain('<th class="n">FY</th>');
-    expect(html).toContain('<td class="n">2026-27</td>');
+    expect(html).toContain('<th class="n">Year</th>');
+    expect(html).toContain('<td class="n">FY 2026-2027</td>');
     expect(html).toContain("GST @ 18%");
     expect(html).toContain("Pay in 15 days");
     expect(html).toContain("@page{margin:0}"); // no browser header/footer when printing
+    // Laid out like the firm's own professional invoice.
+    expect(html).toContain('<div class="title">PROFESSIONAL INVOICE</div>');
+    expect(html).toContain("Being the charges for services rendered");
+    expect(html).toContain("Twenty Nine Thousand Five Hundred Rupees Only"); // 25,000 + 18% GST, in words
+    expect(html).toContain("E.&amp; O.E.");
+    // The due date is in the remarks, not at the top.
+    expect(html).toContain("Payment due by 20 Nov 2026.");
+    expect(html.indexOf("Payment due by")).toBeGreaterThan(html.indexOf("Amount in words"));
+    expect(html).toContain("Subject to Ahmedabad jurisdiction."); // the default city
 
     const json = JSON.parse(read("Bill Writer & Sons", "client-data.json"));
     expect(json.bills).toHaveLength(1);

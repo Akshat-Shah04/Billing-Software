@@ -3,20 +3,24 @@ import { z } from "zod";
 import type { Db } from "../db/index.js";
 import type { ClientFiles } from "../lib/clientFiles.js";
 import { HttpError } from "../lib/errors.js";
+import { optionalMobile } from "../lib/mobile.js";
 import { likePattern, optionalText, parsePaging } from "../lib/paging.js";
 
 const COLUMNS =
-  "id, name, phone, email, address, city, pan, gstin, referred_by, folder_name, is_deleted, created_at, updated_at";
+  "id, name, phone, email, address, city, pan, gstin, referred_by, file_no, folder_name, is_deleted, created_at, updated_at";
 
 const clientSchema = z.object({
   name: z.string().trim().min(1, "is required").max(150),
-  phone: optionalText(20),
+  /** The client's mobile number: 10 digits (a leading +91 or 0 is removed). Stored in the "phone" column. */
+  phone: optionalMobile(),
   email: optionalText(150).refine((v) => v === null || /^\S+@\S+\.\S+$/.test(v), "is not valid, for example name@example.com"),
   address: optionalText(300),
   city: optionalText(100),
   pan: optionalText(10).transform((v) => v?.toUpperCase() ?? null),
   gstin: optionalText(15).transform((v) => v?.toUpperCase() ?? null),
   referred_by: optionalText(150),
+  /** The firm's file reference for this client, printed on bills as "File No.". */
+  file_no: optionalText(50),
 });
 
 export function clientRoutes(db: Db, files: ClientFiles): Router {
@@ -34,7 +38,7 @@ export function clientRoutes(db: Db, files: ClientFiles): Router {
     const includeDeleted = req.query.include_deleted === "true";
     const params = [q ? likePattern(q) : null, includeDeleted];
     const where =
-      "($1::text IS NULL OR name ILIKE $1 OR phone ILIKE $1 OR referred_by ILIKE $1) AND ($2::boolean OR NOT is_deleted)";
+      "($1::text IS NULL OR name ILIKE $1 OR phone ILIKE $1 OR referred_by ILIKE $1 OR file_no ILIKE $1) AND ($2::boolean OR NOT is_deleted)";
     const total = await db.query<{ n: number }>(`SELECT count(*) AS n FROM clients WHERE ${where}`, params);
     const { rows } = await db.query(
       `SELECT ${COLUMNS} FROM clients WHERE ${where} ORDER BY lower(name), id LIMIT $3 OFFSET $4`,
@@ -52,9 +56,9 @@ export function clientRoutes(db: Db, files: ClientFiles): Router {
   router.post("/", async (req, res) => {
     const c = clientSchema.parse(req.body);
     const { rows } = await db.query(
-      `INSERT INTO clients (name, phone, email, address, city, pan, gstin, referred_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${COLUMNS}`,
-      [c.name, c.phone, c.email, c.address, c.city, c.pan, c.gstin, c.referred_by],
+      `INSERT INTO clients (name, phone, email, address, city, pan, gstin, referred_by, file_no)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING ${COLUMNS}`,
+      [c.name, c.phone, c.email, c.address, c.city, c.pan, c.gstin, c.referred_by, c.file_no],
     );
     res.status(201).json(await refreshed(rows[0].id));
   });
@@ -63,9 +67,9 @@ export function clientRoutes(db: Db, files: ClientFiles): Router {
     const c = clientSchema.parse(req.body);
     const { rows } = await db.query(
       `UPDATE clients SET name = $2, phone = $3, email = $4, address = $5, city = $6,
-              pan = $7, gstin = $8, referred_by = $9, updated_at = now()
+              pan = $7, gstin = $8, referred_by = $9, file_no = $10, updated_at = now()
        WHERE id = $1 RETURNING ${COLUMNS}`,
-      [Number(req.params.id), c.name, c.phone, c.email, c.address, c.city, c.pan, c.gstin, c.referred_by],
+      [Number(req.params.id), c.name, c.phone, c.email, c.address, c.city, c.pan, c.gstin, c.referred_by, c.file_no],
     );
     if (!rows[0]) throw new HttpError(404, "Client not found");
     res.json(await refreshed(rows[0].id));

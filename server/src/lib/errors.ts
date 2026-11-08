@@ -16,6 +16,8 @@ const FIELD_NAMES: Record<string, string> = {
   upi_id: "UPI ID", bank_ifsc: "IFSC code", bank_account_number: "Account number", bank_account_holder: "Account holder name",
   referred_by: "Referred by", client_id: "Client", bill_date: "Bill date", full_name: "Full name",
   price_paise: "Price", gst_rate_percent: "GST rate", payment_instructions: "Payment instructions",
+  phone: "Mobile", org_mobile: "Firm mobile", org_tagline: "Line under the firm name", org_state: "State",
+  signatory_name: "Signatory name", file_no: "File No.",
 };
 // Inside a bill line the stored names differ from the labels on the form.
 const ITEM_FIELD_NAMES: Record<string, string> = {

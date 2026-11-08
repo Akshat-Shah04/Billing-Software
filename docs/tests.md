@@ -5,8 +5,8 @@ checks that were done by hand in a running copy of the app, and what has **not**
 
 ## Latest run
 
-- **Date:** 07 Nov 2026, 20:52
-- **Result:** 113 of 113 tests passed, 0 failed
+- **Date:** 08 Nov 2026, 12:23
+- **Result:** 117 of 117 tests passed, 0 failed
 - **Command:** `cd server && npm test` (Vitest + Supertest). Each test file starts its own in-memory PostgreSQL
   (PGlite), so no database setup is needed and tests never touch real data.
 - **Also checked:** `npm run typecheck` in `server/` and `npm run build` in `client/` (TypeScript and production build) both pass.
@@ -16,8 +16,8 @@ checks that were done by hand in a running copy of the app, and what has **not**
 | [`server/test/money.test.ts`](../server/test/money.test.ts) | Money maths | 4 | 4 passed |
 | [`server/test/api.test.ts`](../server/test/api.test.ts) | Core API (v0.1) | 37 | 37 passed |
 | [`server/test/clientFiles.test.ts`](../server/test/clientFiles.test.ts) | Client folders on disk | 15 | 15 passed |
-| [`server/test/v02.test.ts`](../server/test/v02.test.ts) | v0.2 features | 57 | 57 passed |
-| **Total** | | **113** | **113 passed** |
+| [`server/test/v02.test.ts`](../server/test/v02.test.ts) | v0.2 features | 61 | 61 passed |
+| **Total** | | **117** | **117 passed** |
 
 ## Money maths: `money.test.ts`
 
@@ -154,6 +154,13 @@ Numbering, financial year, due dates, payments, credit notes, settling short pay
 - ✅ Numbers, files and filters a bill by the year chosen, not by its date
 - ✅ Uses the bill date's year when no year is given, and refuses a year too far ahead or too old
 
+### Professional invoice details
+
+- ✅ Writes amounts in words the Indian way
+- ✅ Checks that mobile numbers are 10 digits, and tidies common ways of writing them
+- ✅ Keeps a File No. on the client and puts it on the bill
+- ✅ Stores the firm's mobile, the line under its name, state, signatory and jurisdiction
+
 ### Financial year on each bill line
 
 - ✅ Keeps a year per line, so one bill can cover several years
@@ -252,6 +259,8 @@ Done in a throwaway preview copy (its own database, sample clients and bills), n
 | Bills totals after settling | Billed tile and Total column show the net amount after credit notes and discounts (e.g. 2,950.00 bill settled at 590.00 shows "590.00 of 2,950.00"). |
 | Settings | Backups section (location, second copy warning, Back up now) and client folders section render; long folder paths wrap. |
 | Clients | List, Bills and Statement links, add/edit sheet. |
+| Professional invoice layout | Bill page and PDF follow the firm's demo bill: letterhead with tagline, address and mobile; PROFESSIONAL INVOICE box with Bill No., Date and File No.; Sr. / services rendered / Year (FY 2026-2027) / Amount; amount in words with E.& O.E.; due date under Remarks; For, firm name with signatory and State: GUJARAT(24); Subject to Ahmedabad jurisdiction. A typical bill fits on one A4 page. |
+| Mobile numbers | Client form strips letters as you type, shows how many digits are missing, and keeps Add disabled until there are 10 digits; File No. is upper-cased. |
 | Installer artwork | Icon frames (16 to 256 px) read back correctly; wizard picture checked visually. |
 
 ## Not tested yet

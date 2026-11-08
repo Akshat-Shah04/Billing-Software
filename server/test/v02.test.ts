@@ -156,6 +156,61 @@ describe("financial year chosen separately from the bill date", () => {
   });
 });
 
+describe("professional invoice details", () => {
+  it("writes amounts in words the Indian way", async () => {
+    const { amountInWords, numberInWords } = await import("../src/lib/words.js");
+    expect(amountInWords(400_000)).toBe("Four Thousand Rupees Only");
+    expect(amountInWords(300_000)).toBe("Three Thousand Rupees Only");
+    expect(amountInWords(100)).toBe("One Rupee Only");
+    expect(amountInWords(50)).toBe("Fifty Paise Only");
+    expect(amountInWords(0)).toBe("Zero Rupees Only");
+    expect(amountInWords(12_345_050)).toBe("One Lakh Twenty Three Thousand Four Hundred Fifty Rupees and Fifty Paise Only");
+    expect(amountInWords(1_770_000)).toBe("Seventeen Thousand Seven Hundred Rupees Only");
+    expect(numberInWords(10_00_00_000)).toBe("Ten Crore");
+    expect(numberInWords(1_18_00_00_000)).toBe("One Hundred Eighteen Crore");
+    expect(numberInWords(1_01_01_101)).toBe("One Crore One Lakh One Thousand One Hundred One");
+  });
+
+  it("checks that mobile numbers are 10 digits, and tidies common ways of writing them", async () => {
+    const post = (phone: string) => api.post("/api/clients").set(auth(staff)).send({ name: "Mobile Check Co", phone });
+    expect((await post("+91 98250 12345")).body.phone).toBe("9825012345");
+    expect((await post("098250-12345")).body.phone).toBe("9825012345");
+    expect((await post("9825012345")).body.phone).toBe("9825012345");
+    for (const bad of ["98250123", "98250123456", "5825012345", "+1 415 555 0100", "phone"]) {
+      const res = await post(bad);
+      expect(res.status, bad).toBe(400);
+      expect(res.body.error).toBe("Mobile must be a 10-digit mobile number, for example 9825012345");
+    }
+    expect((await post("")).body.phone).toBeNull(); // empty is allowed: no mobile number
+  });
+
+  it("keeps a File No. on the client and puts it on the bill", async () => {
+    const c = (await api.post("/api/clients").set(auth(staff)).send({ name: "File No Co", file_no: "BHAVIK SMS" })).body;
+    expect(c.file_no).toBe("BHAVIK SMS");
+    const bill = await newBill(c.id);
+    expect(bill.client_file_no).toBe("BHAVIK SMS");
+    expect((await api.get("/api/clients?q=bhavik sms").set(auth(staff))).body.items.map((x: any) => x.id)).toContain(c.id);
+  });
+
+  it("stores the firm's mobile, the line under its name, state, signatory and jurisdiction", async () => {
+    const before = (await api.get("/api/settings").set(auth(admin))).body;
+    expect(before.jurisdiction).toBe("Ahmedabad"); // default
+    const body = {
+      gst_enabled: false, gst_rate_percent: 18,
+      org_tagline: "Tax Consultants", org_mobile: "98251 76666", org_state: "gujarat(24)", signatory_name: "Haresh Shah", jurisdiction: "Ahmedabad",
+    };
+    const res = await api.put("/api/settings").set(auth(admin)).send(body);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({ org_tagline: "Tax Consultants", org_mobile: "9825176666", org_state: "GUJARAT(24)", signatory_name: "Haresh Shah" });
+    const bad = await api.put("/api/settings").set(auth(admin)).send({ ...body, org_mobile: "12345" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toBe("Firm mobile must be a 10-digit mobile number, for example 9825012345");
+    // Fields that are not sent are kept.
+    const kept = await api.put("/api/settings").set(auth(admin)).send({ gst_enabled: false, gst_rate_percent: 18 });
+    expect(kept.body).toMatchObject({ org_mobile: "9825176666", signatory_name: "Haresh Shah", jurisdiction: "Ahmedabad" });
+  });
+});
+
 describe("financial year on each bill line", () => {
   it("keeps a year per line, so one bill can cover several years", async () => {
     const c = await newClient("Many Years Co");

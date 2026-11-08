@@ -33,6 +33,13 @@ A billing software for an accountancy firm to manage clients, services and bills
 - **Financial year chosen separately from the bill date**: the New bill form starts with a financial year dropdown
   (2026-2027, 2025-2026, ... back to 2000-2001), so a bill made today can be for an earlier year's work, and old bills can
   be entered. The bill is numbered in, listed under and exported with that year; the bill date is just the date printed on it.
+- **Professional invoice layout** (v0.2.1): bills, PDFs and client-folder copies are titled *PROFESSIONAL INVOICE* and show the
+  firm's name, the line under it (e.g. *Tax Consultants*), address and mobile number; Bill No., Date and the client's File No.;
+  Sr. / services rendered / Year (*FY 2025-2026*) / Amount; the total in words (*Four Thousand Rupees Only*) with *E.& O.E.*;
+  the due date under *Remarks*; *For, firm name* with the signatory and the firm's state (*GUJARAT(24)*); and *Subject to
+  Ahmedabad jurisdiction*. The mobile number, line under the name, state, signatory and jurisdiction city are set in Settings.
+- **Mobile numbers are checked**: a client's mobile (and the firm's) must be 10 digits; "+91 98250 12345" and "098250-12345" are
+  tidied to "9825012345".
 - **Financial year per item**: each line of a bill has its own financial year, shown in an FY column on the bill (in place of
   a quantity), so one bill can cover e.g. *Income Tax Return 2023-24* and *2024-25*.
 - **Payments**: record full or part payments (UPI, bank transfer, cash, cheque, card) with a reference. A wrong payment is
