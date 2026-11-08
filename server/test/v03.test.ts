@@ -246,6 +246,14 @@ describe("forgot password (administrators, by email)", () => {
     });
     expect(mail.status, JSON.stringify(mail.body)).toBe(200);
     expect(mail.body).toMatchObject({ configured: true, smtp_password_set: true, app_url: "http://OFFICE-PC:4000" });
+
+    // Mistakes explained in the form's own words: an email address as the mail server, a "Send from" that isn't an address.
+    const wrongHost = await api.put("/api/settings/mail").set(auth(admin)).send({ smtp_host: "someone@gmail.com", smtp_port: 587, smtp_secure: false, smtp_user: null, smtp_from: null, app_url: null });
+    expect(wrongHost.status).toBe(400);
+    // One clear message, not two.
+    expect(wrongHost.body.error).toBe("Mail server (SMTP) must be the mail server's name, such as smtp.gmail.com, not an email address (your email address goes under Username and Send from)");
+    const wrongFrom = await api.put("/api/settings/mail").set(auth(admin)).send({ smtp_host: "smtp.gmail.com", smtp_port: 587, smtp_secure: false, smtp_user: null, smtp_from: "Billing", app_url: null });
+    expect(wrongFrom.body.error).toMatch(/^Send from must be an email address/);
     expect(JSON.stringify(mail.body)).not.toContain("secret-app-password"); // never sent back
     expect((await api.get("/api/settings/mail").set(auth(staff))).status).toBe(403);
     expect(JSON.stringify((await api.get("/api/settings").set(auth(staff))).body)).not.toContain("smtp");

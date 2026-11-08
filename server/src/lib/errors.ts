@@ -18,6 +18,9 @@ const FIELD_NAMES: Record<string, string> = {
   price_paise: "Price", gst_rate_percent: "GST rate", payment_instructions: "Payment instructions",
   phone: "Mobile", org_mobile: "Firm mobile", org_tagline: "Line under the firm name", org_state: "State",
   signatory_name: "Signatory name", file_no: "File No.",
+  // Settings → Email, named as on the form
+  smtp_host: "Mail server (SMTP)", smtp_port: "Port", smtp_secure: "Security", smtp_user: "Username", smtp_password: "Password",
+  smtp_from: "Send from", app_url: "Address of this software",
 };
 // Inside a bill line the stored names differ from the labels on the form.
 const ITEM_FIELD_NAMES: Record<string, string> = {

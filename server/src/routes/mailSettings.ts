@@ -6,13 +6,16 @@ import { loadMailSettings, mailConfigured, type Mailer } from "../lib/mailer.js"
 import { optionalText } from "../lib/paging.js";
 
 const updateSchema = z.object({
-  smtp_host: optionalText(200),
+  // The server's name, e.g. smtp.gmail.com. An email address typed here by mistake gets its own explanation.
+  smtp_host: optionalText(200)
+    .refine((v) => v === null || !v.includes("@"), "must be the mail server's name, such as smtp.gmail.com, not an email address (your email address goes under Username and Send from)")
+    .refine((v) => v === null || v.includes("@") || /^[A-Za-z0-9.-]+$/.test(v),"must be a server name such as smtp.gmail.com or smtp.office365.com"),
   smtp_port: z.number().int().min(1).max(65535),
   smtp_secure: z.boolean(),
   smtp_user: optionalText(200),
   /** Left out = keep the saved password; an empty string = remove it. Never sent back to the browser. */
   smtp_password: z.string().max(300).optional(),
-  smtp_from: optionalText(200).refine((v) => v === null || /^(.+<\S+@\S+\.\S+>|\S+@\S+\.\S+)$/.test(v), "must be an email address, for example billing@yourfirm.in or Your Firm <billing@yourfirm.in>"),
+  smtp_from: optionalText(200).refine((v) => v === null || /^(.+<\S+@\S+\.\S+>|\S+@\S+\.\S+)$/.test(v), "must be an email address, for example billing@yourfirm.in or Your Firm <billing@yourfirm.in>. With Gmail, use your Gmail address"),
   app_url: optionalText(200).refine((v) => v === null || /^https?:\/\/[^\s/]+(:\d+)?\/?$/.test(v), "must be like http://OFFICE-PC:4000"),
 });
 
@@ -60,8 +63,8 @@ export function mailSettingsRoutes(db: Db, mailer: Mailer): Router {
       await mailer.send({
         to: me.email,
         subject: "Billing Software: test email",
-        text: "This is a test email from Billing Software. Email is working, so password reset links can be sent.",
-        html: "<p>This is a test email from Billing Software.</p><p><strong>Email is working</strong>, so password reset links can be sent.</p>",
+        text: "This is a test email from Billing Software. Email is working, so payment receipts and password reset links can be sent.",
+        html: "<p>This is a test email from Billing Software.</p><p><strong>Email is working</strong>, so payment receipts and password reset links can be sent.</p>",
       });
     } catch (e) {
       if (e instanceof HttpError) throw e;
