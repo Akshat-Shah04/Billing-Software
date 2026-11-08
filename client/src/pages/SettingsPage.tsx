@@ -204,8 +204,40 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="field" style={{ marginTop: ".85rem" }}>
+            <label htmlFor="o-tagline">Line under the firm name</label>
+            <input id="o-tagline" maxLength={150} placeholder="e.g. Tax Consultants" value={form.org_tagline} onChange={(e) => setForm({ ...form, org_tagline: e.target.value })} />
+          </div>
+          <div className="field" style={{ marginTop: ".85rem" }}>
             <label htmlFor="o-addr">Address</label>
             <textarea id="o-addr" rows={2} maxLength={300} value={form.org_address} onChange={(e) => setForm({ ...form, org_address: e.target.value })} />
+          </div>
+          <div className="grid two" style={{ marginTop: ".85rem" }}>
+            <div className="field">
+              <label htmlFor="o-mobile">Mobile number</label>
+              <input
+                id="o-mobile"
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                placeholder="10 digits, e.g. 9825176666"
+                value={form.org_mobile}
+                onChange={(e) => setForm({ ...form, org_mobile: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+              />
+              {form.org_mobile && form.org_mobile.length !== 10 && <div className="hint">{10 - form.org_mobile.length} more digits needed</div>}
+            </div>
+            <div className="field">
+              <label htmlFor="o-state">State (with GST state code)</label>
+              <input id="o-state" maxLength={60} placeholder="e.g. GUJARAT(24)" style={{ textTransform: "uppercase" }} value={form.org_state} onChange={(e) => setForm({ ...form, org_state: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="field">
+              <label htmlFor="o-signatory">Signatory name</label>
+              <input id="o-signatory" maxLength={100} placeholder="Printed under “For, firm name”" value={form.signatory_name} onChange={(e) => setForm({ ...form, signatory_name: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="o-juris">Jurisdiction (city)</label>
+              <input id="o-juris" maxLength={100} placeholder="e.g. Ahmedabad" value={form.jurisdiction} onChange={(e) => setForm({ ...form, jurisdiction: e.target.value })} />
+              <div className="hint">{form.jurisdiction.trim() ? `Bills say “Subject to ${form.jurisdiction.trim()} jurisdiction.”` : "Leave empty to print no jurisdiction line."}</div>
+            </div>
           </div>
 
           <div style={{ marginTop: "1.25rem" }}>
@@ -235,7 +267,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
-        <p className="section-foot">The logo is saved as soon as you choose it. PNG or JPEG (WebP is converted). Large images are shrunk automatically.</p>
+        <p className="section-foot">All of these are printed on every bill and PDF. The logo is saved as soon as you choose it. PNG or JPEG (WebP is converted). Large images are shrunk automatically.</p>
 
         <div className="section-label">Billing</div>
         <div className="card">

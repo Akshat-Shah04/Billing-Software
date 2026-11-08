@@ -566,6 +566,9 @@ tr.clickable:active { background: var(--fill-3); }
 .item-bullets li.more { list-style: none; margin-left: -1.05rem; font: var(--t-footnote); }
 .bill-id a { color: var(--text); }
 tr.dim td { color: var(--muted); }
+/* The clients table scrolls sideways in a narrow window instead of squeezing words into single letters. */
+.table-clients { min-width: 760px; }
+.table-clients td { overflow-wrap: normal; }
 tr.struck td.amount { text-decoration: line-through; }
 .empty-cell { text-align: center; color: var(--muted); padding: 3rem 1rem !important; }
 .empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
@@ -687,6 +690,30 @@ dialog.sheet::backdrop { background: var(--scrim); }
 @media (max-width: 640px) { .paper.card { padding: 1.25rem; } }
 
 .path { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; word-break: break-all; background: var(--fill-3); padding: 0.15rem 0.4rem; border-radius: 5px; }
+
+/* ----- The professional invoice (bill page): letterhead, party + title box, items, words, remarks, sign-off ----- */
+.invoice .letterhead { text-align: center; padding-bottom: 0.9rem; margin-bottom: 1.25rem; border-bottom: 1.5px solid var(--text); }
+.invoice .letterhead .org-logo { margin: 0 auto 0.5rem; }
+.invoice .letterhead h1 { font: var(--t-title2); font-size: 26px; letter-spacing: 0.01em; margin: 0; }
+.invoice .lh-tagline { font: var(--t-footnote); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0.1rem 0 0.3rem; }
+.invoice .lh-contact { font-weight: 600; margin-top: 0.15rem; }
+.invoice .party { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.invoice .party-to { flex: 1 1 18rem; min-width: 0; overflow-wrap: anywhere; }
+.invoice .party-name { display: block; font-size: 17px; }
+.invoice .party-ids { font-weight: 600; }
+.invoice .doc-label { font: var(--t-footnote); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.15rem; }
+.invoice .invoice-box { min-width: 15rem; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--separator-strong); padding: 0.65rem 0.85rem; }
+.invoice .invoice-title { text-align: center; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.4rem; }
+.invoice .invoice-box dl { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 1.25rem; margin: 0; font-variant-numeric: tabular-nums; }
+.invoice .invoice-box dt { color: var(--muted); }
+.invoice .invoice-box dd { margin: 0; text-align: right; font-weight: 700; }
+.invoice .invoice-items th { color: var(--text); border-bottom: 1.5px solid var(--text); }
+.invoice .in-words { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 1rem; }
+.invoice .remarks { margin-top: 1.25rem; }
+.invoice .sign-off { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-top: 2.25rem; break-inside: avoid; }
+.invoice .sign-who { text-align: right; }
+.invoice .sign-line { margin-top: 2.75rem; padding-top: 0.25rem; min-width: 12rem; border-top: 1px solid var(--separator-strong); }
+.invoice .jurisdiction { text-align: center; color: var(--muted); font: var(--t-subhead); margin-top: 1rem; padding-top: 0.6rem; border-top: 0.5px solid var(--separator); }
 
 /* ----- Phones: lists become stacked rows instead of sideways-scrolling tables ----- */
 @media (max-width: 640px) {

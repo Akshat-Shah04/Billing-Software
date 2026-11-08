@@ -9,6 +9,7 @@ import PaymentDetails, { hasPaymentDetails } from "../components/PaymentDetails"
 import Sheet from "../components/Sheet";
 import StatusBadge from "../components/StatusBadge";
 import { useLoad, useLogoUrl } from "../hooks";
+import { amountInWords } from "../words";
 import { calculateTotals, formatDate, formatRupees, fyLabel, paiseToInput, rupeesToPaise, todayISO } from "../money";
 import type { Bill, Discount, HistoryEntry, Payment, PaymentMethod, Settings } from "../types";
 
@@ -111,56 +112,78 @@ export default function BillView() {
       </div>
 
       <div className="bill-layout">
-        {/* ---------- The document, exactly as it prints ---------- */}
-        <article className="card paper">
-          <div className="invoice-head">
-            <div>
-              {logoUrl && <img className="org-logo" src={logoUrl} alt="" />}
-              <h1>{org?.org_name || "Invoice"}</h1>
-              <div className="muted pre">{org?.org_address}</div>
-              {org?.org_gstin && <div className="muted">GSTIN: {org.org_gstin}</div>}
+        {/* ---------- The document, laid out like the firm's professional invoice, exactly as it prints ---------- */}
+        <article className="card paper invoice">
+          <header className="letterhead">
+            {logoUrl && <img className="org-logo" src={logoUrl} alt="" />}
+            <h1>{org?.org_name || "Invoice"}</h1>
+            {org?.org_tagline && <div className="lh-tagline">{org.org_tagline}</div>}
+            {org?.org_address && <div className="pre">{org.org_address}</div>}
+            {(org?.org_mobile || org?.org_gstin) && (
+              <div className="lh-contact">
+                {[org.org_mobile && `Mobile: ${org.org_mobile}`, org.org_gstin && `GSTIN: ${org.org_gstin}`].filter(Boolean).join("   ·   ")}
+              </div>
+            )}
+          </header>
+
+          <div className="party">
+            <div className="party-to">
+              <div className="doc-label">To</div>
+              <strong className="party-name">{b.client_name}</strong>
+              {b.client_address && <div className="pre">{b.client_address}</div>}
+              {b.client_city && <div>{b.client_city}</div>}
+              {(b.client_pan || b.client_gstin) && (
+                <div className="party-ids">{[b.client_pan && `PAN: ${b.client_pan}`, b.client_gstin && `GSTIN: ${b.client_gstin}`].filter(Boolean).join("   ·   ")}</div>
+              )}
+              {b.client_phone && <div className="muted">Mobile: {b.client_phone}</div>}
             </div>
-            <div className="right">
-              <div className="doc-title">{b.gst_rate_percent > 0 ? "Tax invoice" : "Invoice"}</div>
-              <div className="doc-number">{b.bill_no}</div>
-              <div>Date: {formatDate(b.bill_date)}</div>
-              {b.due_date && <div>Due: {formatDate(b.due_date)}</div>}
+            <div>
+              <div className="invoice-box">
+                <div className="invoice-title">Professional Invoice</div>
+                <dl>
+                  <dt>Bill No.</dt>
+                  <dd>{b.bill_no}</dd>
+                  <dt>Date</dt>
+                  <dd>{formatDate(b.bill_date)}</dd>
+                  {b.client_file_no && (
+                    <>
+                      <dt>File No.</dt>
+                      <dd>{b.client_file_no}</dd>
+                    </>
+                  )}
+                </dl>
+              </div>
               {cancelled && <div className="stamp">Cancelled</div>}
             </div>
           </div>
 
-          <div style={{ marginBottom: "1.25rem" }}>
-            <div className="muted tiny">Billed to</div>
-            <strong>{b.client_name}</strong>
-            {b.client_address && <div className="pre">{b.client_address}</div>}
-            <div className="muted">{[b.client_city, b.client_phone].filter(Boolean).join(" · ")}</div>
-            {b.client_gstin && <div className="muted">GSTIN: {b.client_gstin}</div>}
-            {b.client_pan && <div className="muted">PAN: {b.client_pan}</div>}
-          </div>
-
           <div className="table-wrap">
-            <table>
+            <table className="invoice-items">
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th className="num">FY</th>
-                  <th className="num">Price</th>
-                  <th className="num">Amount</th>
+                  <th style={{ width: "2.5rem" }}>Sr.</th>
+                  <th>Being the charges for services rendered</th>
+                  <th className="num">Year</th>
+                  <th className="num">Amount (₹)</th>
                 </tr>
               </thead>
               <tbody>
-                {b.items.map((i) => (
+                {b.items.map((i, n) => (
                   <tr key={i.id}>
+                    <td>{n + 1}</td>
                     <td>
                       <div className="item-title">{i.description}</div>
                       {i.details && <div className="item-text">{i.details}</div>}
+                      {i.quantity > 1 && (
+                        <div className="item-text">
+                          {i.quantity} × {formatRupees(i.unit_price_paise)}
+                        </div>
+                      )}
                     </td>
-                    <td className="num">{fyLabel(i.fy_start)}</td>
+                    <td className="num">FY {i.fy_start}-{i.fy_start + 1}</td>
                     <td className="num">
-                      {formatRupees(i.unit_price_paise)}
-                      {i.quantity > 1 && <div className="muted tiny">× {i.quantity}</div>}
+                      <strong>{formatRupees(i.line_total_paise)}</strong>
                     </td>
-                    <td className="num">{formatRupees(i.line_total_paise)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -168,28 +191,37 @@ export default function BillView() {
           </div>
 
           <div className="totals" style={{ marginTop: "1rem" }}>
-            <div>
-              <span>Subtotal</span>
-              <span>{formatRupees(b.subtotal_paise)}</span>
-            </div>
             {b.gst_rate_percent > 0 && (
-              <div>
-                <span>GST @ {b.gst_rate_percent}%</span>
-                <span>{formatRupees(b.gst_paise)}</span>
-              </div>
+              <>
+                <div>
+                  <span>Subtotal</span>
+                  <span>{formatRupees(b.subtotal_paise)}</span>
+                </div>
+                <div>
+                  <span>GST @ {b.gst_rate_percent}%</span>
+                  <span>{formatRupees(b.gst_paise)}</span>
+                </div>
+              </>
             )}
             <div className="grand">
               <span>Total</span>
               <span>{formatRupees(b.total_paise)}</span>
             </div>
           </div>
+          <div className="in-words">
+            <div>
+              <div className="doc-label">Amount in words</div>
+              <strong>{amountInWords(b.total_paise)}</strong>
+            </div>
+            <div className="muted small">E.&amp; O.E.</div>
+          </div>
 
-          {b.notes && (
-            <p style={{ marginTop: "1.25rem" }}>
-              <span className="muted tiny">Notes</span>
-              <br />
-              <span className="pre">{b.notes}</span>
-            </p>
+          {(b.notes || (b.due_date && !cancelled)) && (
+            <div className="remarks">
+              <div className="doc-label">Remarks</div>
+              {b.due_date && !cancelled && <div>Payment due by {formatDate(b.due_date)}.</div>}
+              {b.notes && <div className="pre">{b.notes}</div>}
+            </div>
           )}
 
           {!cancelled && <PaymentDetails org={org} />}
@@ -201,6 +233,24 @@ export default function BillView() {
               </Message>
             </div>
           )}
+
+          <footer className="sign-off">
+            <div>{org?.org_state && <strong>State: {org.org_state}</strong>}</div>
+            <div className="sign-who">
+              <strong>For, {org?.org_name || "the firm"}</strong>
+              <div className="sign-line">
+                {org?.signatory_name ? (
+                  <>
+                    <strong>{org.signatory_name}</strong>
+                    <div className="muted tiny">Authorised Signatory</div>
+                  </>
+                ) : (
+                  "Authorised Signatory"
+                )}
+              </div>
+            </div>
+          </footer>
+          {org?.jurisdiction?.trim() && <div className="jurisdiction">Subject to {org.jurisdiction.trim()} jurisdiction.</div>}
         </article>
 
         {/* ---------- Status and actions ---------- */}

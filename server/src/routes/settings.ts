@@ -3,13 +3,24 @@ import { z } from "zod";
 import type { Db, Queryable } from "../db/index.js";
 import type { ClientFiles } from "../lib/clientFiles.js";
 import { HttpError } from "../lib/errors.js";
+import { optionalMobile } from "../lib/mobile.js";
 import { optionalText } from "../lib/paging.js";
 import { requireAdmin } from "../middleware/auth.js";
 
 export interface Settings {
   org_name: string;
+  /** Printed under the firm name on bills, e.g. "Tax Consultants". */
+  org_tagline: string;
   org_address: string;
+  /** The firm's 10-digit mobile number, printed in the bill's header. */
+  org_mobile: string;
   org_gstin: string;
+  /** The firm's state with its GST state code, e.g. "GUJARAT(24)", printed at the foot of the bill. */
+  org_state: string;
+  /** Printed under "For, <firm name>" where the bill is signed. */
+  signatory_name: string;
+  /** City whose courts have jurisdiction: "Subject to Ahmedabad jurisdiction" at the foot of the bill. */
+  jurisdiction: string;
   // Where clients should pay. Printed on every bill.
   bank_account_holder: string;
   bank_name: string;
@@ -28,8 +39,13 @@ export interface Settings {
 
 const TEXT_KEYS = [
   "org_name",
+  "org_tagline",
   "org_address",
+  "org_mobile",
   "org_gstin",
+  "org_state",
+  "signatory_name",
+  "jurisdiction",
   "bank_account_holder",
   "bank_name",
   "bank_account_number",
@@ -38,6 +54,8 @@ const TEXT_KEYS = [
   "upi_id",
   "payment_instructions",
 ] as const;
+
+const KEPT_WHEN_LEFT_OUT = new Set<string>(["org_tagline", "org_mobile", "org_state", "signatory_name", "jurisdiction"]);
 
 export async function loadSettings(q: Queryable): Promise<Settings> {
   const { rows } = await q.query<{ key: string; value: string }>("SELECT key, value FROM settings");
@@ -77,8 +95,13 @@ const MAX_LOGO_BYTES = 1024 * 1024;
 
 const updateSchema = z.object({
   org_name: optionalText(150),
+  org_tagline: optionalText(150),
   org_address: optionalText(300),
+  org_mobile: optionalMobile(),
   org_gstin: optionalText(15).transform((v) => v?.toUpperCase() ?? null),
+  org_state: optionalText(60).transform((v) => v?.toUpperCase() ?? null),
+  signatory_name: optionalText(100),
+  jurisdiction: optionalText(100),
   bank_account_holder: optionalText(150),
   bank_name: optionalText(150),
   bank_account_number: optionalText(30),
@@ -111,7 +134,11 @@ export function settingsRoutes(db: Db, files: ClientFiles): Router {
   router.put("/", requireAdmin, async (req, res) => {
     const s = updateSchema.parse(req.body);
     const values: Record<string, string> = {
-      ...Object.fromEntries(TEXT_KEYS.map((k) => [k, s[k] ?? ""])),
+      // A field left out is cleared, except the fields added in v0.2.1: those are kept, because a screen from an
+      // older version (still open in someone's browser) does not send them and must not wipe them.
+      ...Object.fromEntries(
+        TEXT_KEYS.filter((k) => !KEPT_WHEN_LEFT_OUT.has(k) || Object.hasOwn(req.body ?? {}, k)).map((k) => [k, s[k] ?? ""]),
+      ),
       gst_enabled: String(s.gst_enabled),
       gst_rate_percent: String(s.gst_rate_percent),
       ...(s.payment_terms_days !== undefined ? { payment_terms_days: String(s.payment_terms_days) } : {}),

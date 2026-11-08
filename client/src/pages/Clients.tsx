@@ -9,7 +9,7 @@ import Sheet from "../components/Sheet";
 import { useDebounced, useLoad } from "../hooks";
 import type { Client, Page } from "../types";
 
-const EMPTY = { name: "", phone: "", email: "", city: "", address: "", pan: "", gstin: "", referred_by: "" };
+const EMPTY = { name: "", phone: "", email: "", city: "", address: "", pan: "", gstin: "", referred_by: "", file_no: "" };
 type Form = typeof EMPTY;
 
 const fieldsOf = (c: Client): Form => ({
@@ -21,16 +21,18 @@ const fieldsOf = (c: Client): Form => ({
   pan: c.pan ?? "",
   gstin: c.gstin ?? "",
   referred_by: c.referred_by ?? "",
+  file_no: c.file_no ?? "",
 });
 
 // The same limits the server enforces, so you cannot type past them and find out only when saving.
 const LIMITS: Record<keyof Form, number> = {
-  name: 150, phone: 20, email: 150, city: 100, pan: 10, gstin: 15, referred_by: 150, address: 300,
+  name: 150, phone: 10, email: 150, city: 100, pan: 10, gstin: 15, referred_by: 150, address: 300, file_no: 50,
 };
 
-const FIELDS: { key: keyof Form; label: string; type?: string; inputMode?: "tel" | "email"; upper?: boolean }[] = [
+const FIELDS: { key: keyof Form; label: string; type?: string; inputMode?: "numeric" | "email"; upper?: boolean; digits?: boolean; placeholder?: string }[] = [
   { key: "name", label: "Name" },
-  { key: "phone", label: "Phone", type: "tel", inputMode: "tel" },
+  { key: "phone", label: "Mobile", type: "tel", inputMode: "numeric", digits: true, placeholder: "10 digits" },
+  { key: "file_no", label: "File No.", upper: true, placeholder: "e.g. BHAVIK SMS" },
   { key: "email", label: "Email", type: "email", inputMode: "email" },
   { key: "city", label: "City" },
   { key: "pan", label: "PAN", upper: true },
@@ -117,7 +119,7 @@ export default function Clients() {
             <input
               type="search"
               aria-label="Search clients"
-              placeholder="Search name, phone or referred by"
+              placeholder="Search name, mobile, file no. or referred by"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -138,11 +140,11 @@ export default function Clients() {
           </label>
         </div>
         <div className="table-wrap">
-          <table>
+          <table className="table-clients">
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Phone</th>
+                <th>Mobile</th>
                 <th>City</th>
                 <th>GSTIN</th>
                 <th>Referred by</th>
@@ -154,7 +156,7 @@ export default function Clients() {
                 <tr key={c.id} className={c.is_deleted ? "dim" : ""}>
                   <td>
                     <strong style={{ fontWeight: 600 }}>{c.name}</strong> {c.is_deleted && <span className="badge neutral">Deleted</span>}
-                    {c.email && <div className="muted tiny">{c.email}</div>}
+                    {(c.file_no || c.email) && <div className="muted tiny">{[c.file_no && `File ${c.file_no}`, c.email].filter(Boolean).join(" · ")}</div>}
                   </td>
                   <td className="nowrap">{c.phone}</td>
                   <td>{c.city}</td>
@@ -210,12 +212,12 @@ export default function Clients() {
         onSubmit={save}
         submitLabel={editing === "new" ? "Add client" : "Save"}
         busy={saving}
-        submitDisabled={!form.name.trim()}
+        submitDisabled={!form.name.trim() || (form.phone !== "" && form.phone.length !== 10)}
         wide
       >
         {formError && <Message kind="error">{formError}</Message>}
         <div className="grid">
-          {FIELDS.map(({ key, label, type, inputMode, upper }) => (
+          {FIELDS.map(({ key, label, type, inputMode, upper, digits, placeholder }) => (
             <div className="field" key={key}>
               <label htmlFor={`c-${key}`}>{label}</label>
               <input
@@ -224,10 +226,14 @@ export default function Clients() {
                 inputMode={inputMode}
                 autoFocus={key === "name"}
                 maxLength={LIMITS[key]}
+                placeholder={placeholder}
                 style={upper ? { textTransform: "uppercase" } : undefined}
                 value={form[key]}
-                onChange={(e) => setForm({ ...form, [key]: upper ? e.target.value.toUpperCase() : e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, [key]: digits ? e.target.value.replace(/\D/g, "").slice(0, 10) : upper ? e.target.value.toUpperCase() : e.target.value })
+                }
               />
+              {digits && form[key] && form[key].length !== 10 && <div className="hint">{10 - form[key].length} more digits needed</div>}
             </div>
           ))}
         </div>

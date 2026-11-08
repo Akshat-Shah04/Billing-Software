@@ -23,6 +23,8 @@ export interface Client {
   pan: string | null;
   gstin: string | null;
   referred_by: string | null;
+  /** The firm's file reference for this client, printed on bills as "File No.". */
+  file_no: string | null;
   folder_name: string | null;
   is_deleted: boolean;
 }
@@ -37,8 +39,18 @@ export interface Service {
 
 export interface Settings {
   org_name: string;
+  /** Printed under the firm name, e.g. "Tax Consultants". */
+  org_tagline: string;
   org_address: string;
+  /** The firm's 10-digit mobile number. */
+  org_mobile: string;
   org_gstin: string;
+  /** e.g. "GUJARAT(24)", printed at the foot of the bill. */
+  org_state: string;
+  /** Printed under "For, <firm name>". */
+  signatory_name: string;
+  /** "Subject to <city> jurisdiction." at the foot of the bill. */
+  jurisdiction: string;
   // Where clients should pay (printed on every bill)
   bank_account_holder: string;
   bank_name: string;
@@ -200,6 +212,7 @@ export interface Bill extends Settlement {
   client_address: string | null;
   client_gstin: string | null;
   client_pan: string | null;
+  client_file_no: string | null;
   created_at: string;
   updated_at: string;
   created_by_name: string;

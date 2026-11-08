@@ -231,7 +231,7 @@ describe("validation messages a person can act on", () => {
   it("says what is wrong in plain words, never database or library jargon", async () => {
     const long = await post("/api/clients", { name: "X", phone: "+91 98765 43210 ext 123" });
     expect(long.status).toBe(400);
-    expect(long.body.error).toBe("Phone is too long (at most 20 characters)");
+    expect(long.body.error).toBe("Mobile is too long (at most 20 characters)");
 
     expect((await post("/api/clients", { name: "  " })).body.error).toBe("Name is required");
     expect((await post("/api/clients", { name: "A", email: "nope" })).body.error).toBe("Email is not valid, for example name@example.com");
